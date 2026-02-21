@@ -1,0 +1,47 @@
+{
+  "gateway": {
+    "bind": "loopback",
+    "port": 18789,
+    "auth": {
+      "mode": "token",
+      "allowTailscale": false
+    },
+    "controlUi": {
+      "allowInsecureAuth": false
+    },
+    "tailscale": {
+      "mode": "serve"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-6"
+      },
+      "sandbox": {
+        "mode": "all",
+        "scope": "agent",
+        "workspaceAccess": "rw"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "REPLACE_WITH_BOT_TOKEN",
+      "dmPolicy": "allowlist",
+      "allowFrom": ["REPLACE_WITH_YOUR_TELEGRAM_USER_ID"]
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "logging": {
+    "redactSensitive": "all"
+  },
+  "discovery": {
+    "mdns": {
+      "mode": "minimal"
+    }
+  }
+}

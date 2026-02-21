@@ -1,0 +1,32 @@
+# Secrets and config
+.env
+.env.*
+!.env.example
+openclaw.json
+
+# Cryptographic material
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Archives and backups
+*.tar.gz
+*.tar.bz2
+*.zip
+*.bak
+
+# macOS
+.DS_Store
+._*
+
+# Editors
+*.swp
+*.swo
+*~
