@@ -484,7 +484,13 @@ create_openclaw_config() {
     "port": 18789,
     "auth": {
       "mode": "token",
-      "allowTailscale": false
+      "allowTailscale": false,
+      "rateLimit": {
+        "maxAttempts": 10,
+        "windowMs": 60000,
+        "lockoutMs": 300000,
+        "exemptLoopback": true
+      }
     },
     "controlUi": {
       "allowInsecureAuth": false
@@ -517,7 +523,7 @@ create_openclaw_config() {
     "dmScope": "per-channel-peer"
   },
   "logging": {
-    "redactSensitive": "all"
+    "redactSensitive": "tools"
   },
   "discovery": {
     "mdns": {
@@ -591,7 +597,8 @@ create_backup() {
     chown root:root "${BACKUP_DIR}"
     chmod 700 "${BACKUP_DIR}"
   fi
-  local backup_filename="${BACKUP_DIR}/openclaw-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+  local backup_filename
+  backup_filename="${BACKUP_DIR}/openclaw-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
   tar -czf "${backup_filename}" "${OPENCLAW_DATA_DIR}"
   chmod 600 "${backup_filename}"
   chown root:root "${backup_filename}"
