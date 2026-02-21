@@ -158,7 +158,7 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 | Disk | Provider-level encryption recommended at provisioning |
 | Inbound messages | `dmPolicy: allowlist` - only your user ID can DM the agent |
 | Sessions | `dmScope: per-channel-peer` - no context leakage between senders |
-| Logging | `redactSensitive: all` - sensitive data redacted everywhere |
+| Logging | `redactSensitive: tools` - sensitive data redacted in tool outputs. Auth rate limiting (10 attempts/min, 5min lockout) |
 | Model | Claude Opus 4.6 - stronger prompt injection resistance than smaller models |
 | Sandbox | Always enabled, workspace-only access |
 | Audit | `openclaw security audit --deep` runs automatically after bootstrap |

@@ -35,7 +35,8 @@ create_backup() {
     chmod 700 "${BACKUP_DIR}"
   fi
 
-  local backup_filename="${BACKUP_DIR}/openclaw-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+  local backup_filename
+  backup_filename="${BACKUP_DIR}/openclaw-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
   tar -czf "${backup_filename}" "${OPENCLAW_DATA_DIR}"
   chmod 600 "${backup_filename}"
   chown root:root "${backup_filename}"

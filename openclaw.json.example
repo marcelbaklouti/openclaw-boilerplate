@@ -4,7 +4,13 @@
     "port": 18789,
     "auth": {
       "mode": "token",
-      "allowTailscale": false
+      "allowTailscale": false,
+      "rateLimit": {
+        "maxAttempts": 10,
+        "windowMs": 60000,
+        "lockoutMs": 300000,
+        "exemptLoopback": true
+      }
     },
     "controlUi": {
       "allowInsecureAuth": false
@@ -30,14 +36,14 @@
       "enabled": true,
       "botToken": "REPLACE_WITH_BOT_TOKEN",
       "dmPolicy": "allowlist",
-      "allowFrom": ["REPLACE_WITH_YOUR_TELEGRAM_USER_ID"]
+      "allowFrom": ["tg:REPLACE_WITH_YOUR_TELEGRAM_USER_ID"]
     }
   },
   "session": {
     "dmScope": "per-channel-peer"
   },
   "logging": {
-    "redactSensitive": "all"
+    "redactSensitive": "tools"
   },
   "discovery": {
     "mdns": {
