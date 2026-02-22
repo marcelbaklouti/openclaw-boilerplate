@@ -81,8 +81,11 @@ All files are owned by `@marcelbaklouti`. The following files are explicitly lis
 | `docker-compose.yml` | Hardened container definition for the OpenClaw gateway |
 | `.env.example` | Template for all required environment variables |
 | `openclaw.json.example` | OpenClaw runtime config with secure defaults |
+| `test/Dockerfile.test` | Docker image simulating a fresh Ubuntu VPS for testing |
+| `test/test-setup.sh` | Smoke test exercising `setup.sh` and validating every step |
 | `.github/workflows/lint.yml` | ShellCheck on all `.sh` files |
 | `.github/workflows/security.yml` | TruffleHog, Gitleaks, Trivy config + filesystem scans |
+| `.github/workflows/test.yml` | Docker-based smoke test running `setup.sh` in a simulated VPS |
 | `.github/workflows/release.yml` | release-please for automated versioning and GitHub Releases |
 | `.github/workflows/dependabot-auto-merge.yml` | Auto-merge non-major Dependabot PRs after CI passes |
 | `.github/dependabot.yml` | Weekly SHA updates for GitHub Actions |
@@ -106,6 +109,7 @@ Every push and PR to `main` runs:
 | `security.yml` | Gitleaks | Secondary regex-based secret detection |
 | `security.yml` | Trivy (config) | `docker-compose.yml` and IaC misconfigurations |
 | `security.yml` | Trivy (filesystem) | Repo files for known vulnerabilities |
+| `test.yml` | Docker | Runs `setup.sh` in a simulated Ubuntu VPS and validates every step |
 
 Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-security/harden-runner) to audit outbound network traffic during CI.
 
@@ -165,7 +169,20 @@ When modifying `docker-compose.yml`, preserve these constraints:
 
 ## Testing Changes Locally
 
-There is no test suite. Validate changes by:
+### Docker-based smoke test (recommended)
+
+The test suite runs `setup.sh` inside a Docker container that simulates a fresh Ubuntu 22.04 VPS. No real VPS needed:
+
+```bash
+docker build -f test/Dockerfile.test -t openclaw-test .
+docker run --rm --privileged openclaw-test
+```
+
+This validates user creation, SSH hardening, config generation, file permissions, cron setup, and more. External services (Docker-in-Docker, Tailscale auth, OpenClaw container build) are stubbed out since they require real infrastructure.
+
+### Manual validation
+
+For deeper testing or when changing container/networking behavior:
 
 1. Running ShellCheck locally: `shellcheck setup.sh openclaw-update.sh`
 2. Reviewing `docker compose config` for valid compose output

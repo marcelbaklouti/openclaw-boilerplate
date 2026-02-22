@@ -47,11 +47,27 @@ Each step is skipped automatically if already done.
 11. **Create data directories** - `/home/openclaw/.openclaw/workspace` owned by the openclaw user. Backup dir at `/home/openclaw/backups` owned by root (700).
 12. **Generate `.env`** - Two secrets generated via `openssl rand -hex 32`. File is pre-created with correct ownership and `600` permissions before secrets are written.
 13. **Write `docker-compose.yml`** - Gateway bound to `127.0.0.1` only, `read_only` filesystem, `no-new-privileges`, `cap_drop: ALL`, memory/CPU/PID limits, log rotation caps, health checks.
-14. **Write `openclaw.json`** - Telegram token read silently (no terminal echo), JSON-sanitized before writing. Secure defaults: loopback bind, token auth, allowlist DM policy, sandbox enabled, mDNS minimal, full sensitive data redaction.
-15. **Set up auto-updates** - Installs `openclaw-update.sh` to `/usr/local/bin`, creates `/etc/cron.d/openclaw-update` (Sundays 03:00), configures logrotate (weekly, 12-week retention).
-16. **Build and start container** - `docker compose build` then `docker compose up -d`.
-17. **Verify gateway binding** - Confirms the gateway is listening on `127.0.0.1:18789`, not `0.0.0.0`.
-18. **Run security audit** - Waits for the gateway to be ready, then runs `openclaw doctor` and `openclaw security audit --deep` inside the container automatically. Warns if any issues are found.
+14. **Select AI provider** - Interactive menu to choose Anthropic Claude, MiniMax M2.5, GLM-5, or a custom OpenAI-compatible endpoint. API key stored separately in `~/.openclaw/.env` with `600` permissions.
+15. **Write `openclaw.json`** - Telegram token read silently (no terminal echo), JSON-sanitized before writing. Model set to the provider chosen above. Secure defaults: loopback bind, token auth, allowlist DM policy, sandbox enabled, mDNS minimal, full sensitive data redaction.
+16. **Set up auto-updates** - Installs `openclaw-update.sh` to `/usr/local/bin`, creates `/etc/cron.d/openclaw-update` (Sundays 03:00), configures logrotate (weekly, 12-week retention).
+17. **Build and start container** - `docker compose build` then `docker compose up -d`.
+18. **Verify gateway binding** - Confirms the gateway is listening on `127.0.0.1:18789`, not `0.0.0.0`.
+19. **Run security audit** - Waits for the gateway to be ready, then runs `openclaw doctor` and `openclaw security audit --deep` inside the container automatically. Warns if any issues are found.
+
+---
+
+## Supported AI providers
+
+The setup script asks which AI provider to use. You can change providers at any time by editing `openclaw.json` and `~/.openclaw/.env`.
+
+| Provider | Model | Input / Output (per 1M tokens) | License | Notes |
+|---|---|---|---|---|
+| Anthropic | `anthropic/claude-opus-4-6` | $5.00 / $25.00 | Proprietary | Strongest prompt injection resistance. Requires commercial API key (not a Pro/Max subscription). |
+| MiniMax | `minimax/MiniMax-M2.5` | $0.30 / $1.20 | MIT | Open weights, self-hostable. 80.2% SWE-Bench. 63x cheaper than Claude Opus. |
+| Zhipu AI | `zhipu/glm-5` | $0.30 / $2.55 | MIT | Open weights, self-hostable. 77.8% SWE-Bench. Available via 8+ API providers. |
+| Custom | Any OpenAI-compatible | Varies | Varies | DeepSeek, Qwen, or any provider with an OpenAI-compatible API. |
+
+MiniMax M2.5 and GLM-5 are recommended if cost is a concern - they deliver competitive agentic performance at a fraction of the price of proprietary models. Both are open-weight and MIT-licensed, meaning you can also self-host them.
 
 ---
 
@@ -125,6 +141,7 @@ All GitHub Actions are pinned to immutable commit SHAs to prevent supply chain a
 |---|---|
 | `lint.yml` | ShellCheck on all `.sh` files (severity: warning) |
 | `security.yml` | TruffleHog secret scanning (verified secrets only), Gitleaks secondary scan, Trivy config and filesystem scanning for docker-compose and IaC misconfigurations |
+| `test.yml` | Docker-based smoke test that runs `setup.sh` in a simulated VPS and validates every step |
 
 Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-security/harden-runner) to monitor and audit outbound network traffic during CI execution.
 
@@ -139,6 +156,8 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 | `docker-compose.yml` | Docker Compose service definition |
 | `.env.example` | Template showing all required env vars |
 | `openclaw.json.example` | Template showing all config options with secure defaults |
+| `test/Dockerfile.test` | Docker image that simulates a fresh Ubuntu VPS for testing |
+| `test/test-setup.sh` | Smoke test that exercises `setup.sh` and validates every step |
 | `.gitignore` | Prevents secrets, keys, certs, and backups from being committed |
 
 ---
@@ -158,7 +177,7 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 | Inbound messages | `dmPolicy: allowlist` - only your user ID can DM the agent |
 | Sessions | `dmScope: per-channel-peer` - no context leakage between senders |
 | Logging | `redactSensitive: tools` - sensitive data redacted in tool outputs. Auth rate limiting (10 attempts/min, 5min lockout) |
-| Model | Claude Opus 4.6 - stronger prompt injection resistance than smaller models |
+| Model | Configurable: Claude Opus 4.6 (default), MiniMax M2.5, GLM-5, or custom. Larger models offer stronger prompt injection resistance. |
 | Sandbox | Always enabled, workspace-only access |
 | Audit | `openclaw security audit --deep` runs automatically after bootstrap |
 | Updates | Weekly automatic with exclusive lock and backup before every update |

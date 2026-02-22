@@ -2,7 +2,7 @@ name: Release
 
 on:
   workflow_run:
-    workflows: ["Lint", "Security"]
+    workflows: ["Lint", "Security", "Test"]
     types: [completed]
     branches: [main]
   workflow_dispatch: {}
@@ -30,7 +30,7 @@ jobs:
         run: |
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           REPO="${{ github.repository }}"
-          REQUIRED=("Lint" "Security")
+          REQUIRED=("Lint" "Security" "Test")
           for wf in "${REQUIRED[@]}"; do
             STATUS=$(gh api "repos/${REPO}/actions/workflows" --jq ".workflows[] | select(.name==\"${wf}\") | .id" | head -1)
             CONCLUSION=$(gh api "repos/${REPO}/actions/workflows/${STATUS}/runs?head_sha=${HEAD_SHA}&per_page=1" --jq '.workflow_runs[0].conclusion')

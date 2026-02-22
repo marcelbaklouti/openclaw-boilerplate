@@ -61,12 +61,16 @@ install_base_packages() {
       "${pkg_manager}" install -y -q \
         firewalld \
         fail2ban \
+        dnf-automatic \
         curl \
         ca-certificates \
         git \
         openssl \
         logrotate
       systemctl enable --now firewalld
+      # Enable automatic security updates (RHEL/Fedora equivalent of unattended-upgrades)
+      sed -i 's/^upgrade_type.*/upgrade_type = security/' /etc/dnf/automatic.conf
+      systemctl enable --now dnf-automatic-install.timer
       ;;
     *)
       echo "Unsupported package manager. Install curl, git, openssl, a firewall, fail2ban, and logrotate manually." >&2
@@ -84,9 +88,11 @@ configure_firewall() {
     ufw allow ssh
     ufw --force enable
   elif command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --set-default-zone=drop
+    # Add SSH to drop zone (permanent + runtime) BEFORE switching default,
+    # so the active SSH session is not interrupted during zone change.
     firewall-cmd --permanent --zone=drop --add-service=ssh
-    firewall-cmd --reload
+    firewall-cmd --zone=drop --add-service=ssh
+    firewall-cmd --set-default-zone=drop
   else
     echo "No supported firewall found (ufw or firewalld). Configure your firewall manually." >&2
   fi
@@ -297,6 +303,7 @@ install_docker() {
     chmod 700 "${tmp_script}"
     bash "${tmp_script}"
   fi
+  systemctl enable --now docker
   usermod -aG docker "${OPENCLAW_USER}"
 }
 
@@ -443,6 +450,96 @@ sanitize_for_json() {
   printf '%s' "${input}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 }
 
+select_ai_provider() {
+  print_step "Selecting AI model provider"
+  echo ""
+  echo "Choose an AI model provider for the agent:"
+  echo ""
+  echo "  1) Anthropic Claude (claude-opus-4-6)  — commercial API key required"
+  echo "  2) MiniMax M2.5        — much cheaper (\$0.30/\$1.20 per 1M tokens), MIT license"
+  echo "  3) GLM-5 (Zhipu AI)   — very affordable (\$0.30/\$2.55 per 1M tokens), MIT license"
+  echo "  4) Custom              — any OpenAI-compatible API endpoint"
+  echo ""
+  echo "Note: Options 2 and 3 are open-weight models available via multiple API"
+  echo "providers (or self-hosted). They score competitively on agentic benchmarks"
+  echo "and cost a fraction of proprietary alternatives."
+  echo ""
+
+  local choice
+  while true; do
+    read -r -p "Enter choice [1-4] (default: 1): " choice
+    choice="${choice:-1}"
+    case "${choice}" in
+      1)
+        AI_PROVIDER="anthropic"
+        AI_MODEL="anthropic/claude-opus-4-6"
+        AI_API_KEY_ENV="ANTHROPIC_API_KEY"
+        echo ""
+        echo "Enter your Anthropic API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      2)
+        AI_PROVIDER="minimax"
+        AI_MODEL="minimax/MiniMax-M2.5"
+        AI_API_KEY_ENV="MINIMAX_API_KEY"
+        echo ""
+        echo "Enter your MiniMax API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      3)
+        AI_PROVIDER="zhipu"
+        AI_MODEL="zhipu/glm-5"
+        AI_API_KEY_ENV="ZHIPU_API_KEY"
+        echo ""
+        echo "Enter your Zhipu AI (GLM-5) API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      4)
+        AI_PROVIDER="custom"
+        echo ""
+        echo "Enter the model identifier (e.g. openai/gpt-4o, deepseek/deepseek-v3.2):"
+        read -r AI_MODEL
+        AI_API_KEY_ENV="OPENAI_API_KEY"
+        echo ""
+        echo "Enter the API base URL (leave blank for provider default):"
+        read -r AI_API_BASE_URL
+        echo ""
+        echo "Enter your API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      *)
+        echo "Invalid choice. Enter 1, 2, 3, or 4."
+        ;;
+    esac
+  done
+
+  echo ""
+  echo "Selected model: ${AI_MODEL}"
+}
+
+store_ai_api_key() {
+  local env_file="${OPENCLAW_DATA_DIR}/.env"
+
+  install -o "${OPENCLAW_USER}" -g "${OPENCLAW_USER}" -m 600 /dev/null "${env_file}"
+
+  local env_content="${AI_API_KEY_ENV}=${ai_api_key:-REPLACE_WITH_API_KEY}"
+  if [[ "${AI_PROVIDER}" == "custom" ]] && [[ -n "${AI_API_BASE_URL:-}" ]]; then
+    env_content="${env_content}
+OPENAI_API_BASE_URL=${AI_API_BASE_URL}"
+  fi
+
+  printf '%s\n' "${env_content}" > "${env_file}"
+  chmod 600 "${env_file}"
+  chown "${OPENCLAW_USER}:${OPENCLAW_USER}" "${env_file}"
+  echo "API key written to ${env_file}"
+
+  unset ai_api_key
+}
+
 create_openclaw_config() {
   print_step "Writing openclaw.json"
   local config_file="${OPENCLAW_DATA_DIR}/openclaw.json"
@@ -501,7 +598,7 @@ create_openclaw_config() {
   "agents": {
     "defaults": {
       "model": {
-        "primary": "anthropic/claude-opus-4-6"
+        "primary": "${AI_MODEL}"
       },
       "sandbox": {
         "mode": "all",
@@ -754,8 +851,10 @@ main() {
   install_docker
   clone_openclaw_repo
   create_data_directories
+  select_ai_provider
   create_env_file
   create_docker_compose_file
+  store_ai_api_key
   create_openclaw_config
   setup_auto_update_cron
   build_and_start_container

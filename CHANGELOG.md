@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Multi-provider AI model selection during setup: Anthropic Claude, MiniMax M2.5, GLM-5, or custom OpenAI-compatible endpoints. MiniMax M2.5 and GLM-5 are open-weight (MIT) and 10-60x cheaper than proprietary alternatives.
+- API key stored in `~/.openclaw/.env` (600 permissions) separate from runtime config
+- `test/Dockerfile.test` and `test/test-setup.sh`: Docker-based smoke test that runs `setup.sh` in a simulated Ubuntu VPS and validates user creation, SSH hardening, config generation, file permissions, cron setup, and more - no real VPS needed
+- `test.yml` workflow: runs the smoke test on every push and PR to `main`
+- Release workflow now verifies all required CI workflows (Lint, Security, Test) passed before running release-please
+
+### Fixed
+
+- `setup.sh`: remove invalid `--permanent` flag from `firewall-cmd --set-default-zone` which broke setup on all RHEL/Fedora systems
+- `setup.sh`: prepend `tg:` prefix to Telegram user ID in generated `openclaw.json` to match the format documented in `openclaw.json.example`
+- `openclaw-update.sh`: remove `npm install -g openclaw@latest` call that always failed because npm is not installed on the host (container rebuild already picks up the latest code)
+- `release.yml`: gate releases on all required workflows passing, not just the one that triggered the `workflow_run` event
+
 ## [1.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v1.0.0) (2026-02-22)
 
 ### Added
