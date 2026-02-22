@@ -5,12 +5,14 @@ umask 077
 OPENCLAW_USER="openclaw"
 OPENCLAW_HOME="/home/openclaw"
 OPENCLAW_DATA_DIR="${OPENCLAW_HOME}/.openclaw"
-OPENCLAW_REPO_DIR="${OPENCLAW_HOME}/openclaw"
-OPENCLAW_IMAGE_TAG="openclaw:latest"
 BACKUP_DIR="${OPENCLAW_HOME}/backups"
+
+CHANNEL=""
+NEEDS_ONBOARD_WIZARD=false
 
 DOCKER_INSTALL_SHA256=""
 TAILSCALE_INSTALL_SHA256=""
+OPENCLAW_INSTALL_SHA256=""
 
 print_step() {
   echo ""
@@ -61,12 +63,16 @@ install_base_packages() {
       "${pkg_manager}" install -y -q \
         firewalld \
         fail2ban \
+        dnf-automatic \
         curl \
         ca-certificates \
         git \
         openssl \
         logrotate
       systemctl enable --now firewalld
+      # Enable automatic security updates (RHEL/Fedora equivalent of unattended-upgrades)
+      sed -i 's/^upgrade_type.*/upgrade_type = security/' /etc/dnf/automatic.conf
+      systemctl enable --now dnf-automatic-install.timer
       ;;
     *)
       echo "Unsupported package manager. Install curl, git, openssl, a firewall, fail2ban, and logrotate manually." >&2
@@ -84,10 +90,11 @@ configure_firewall() {
     ufw allow ssh
     ufw --force enable
   elif command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --permanent --set-default-zone=drop
+    # Add SSH to drop zone (permanent + runtime) BEFORE switching default,
+    # so the active SSH session is not interrupted during zone change.
     firewall-cmd --permanent --zone=drop --add-service=ssh
+    firewall-cmd --zone=drop --add-service=ssh
     firewall-cmd --set-default-zone=drop
-    firewall-cmd --reload
   else
     echo "No supported firewall found (ufw or firewalld). Configure your firewall manually." >&2
   fi
@@ -233,13 +240,23 @@ fetch_live_checksum() {
 fetch_and_pin_checksums() {
   print_step "Fetching and pinning install script checksums"
 
-  echo "Downloading Docker install script to compute checksum..."
-  DOCKER_INSTALL_SHA256="$(fetch_live_checksum "https://get.docker.com")"
-  echo "Docker SHA256: ${DOCKER_INSTALL_SHA256}"
+  if ! command -v docker &>/dev/null; then
+    echo "Downloading Docker install script to compute checksum..."
+    DOCKER_INSTALL_SHA256="$(fetch_live_checksum "https://get.docker.com")"
+    echo "Docker SHA256: ${DOCKER_INSTALL_SHA256}"
+  fi
 
-  echo "Downloading Tailscale install script to compute checksum..."
-  TAILSCALE_INSTALL_SHA256="$(fetch_live_checksum "https://tailscale.com/install.sh")"
-  echo "Tailscale SHA256: ${TAILSCALE_INSTALL_SHA256}"
+  if ! command -v tailscale &>/dev/null; then
+    echo "Downloading Tailscale install script to compute checksum..."
+    TAILSCALE_INSTALL_SHA256="$(fetch_live_checksum "https://tailscale.com/install.sh")"
+    echo "Tailscale SHA256: ${TAILSCALE_INSTALL_SHA256}"
+  fi
+
+  if ! command -v openclaw &>/dev/null; then
+    echo "Downloading OpenClaw install script to compute checksum..."
+    OPENCLAW_INSTALL_SHA256="$(fetch_live_checksum "https://openclaw.ai/install.sh")"
+    echo "OpenClaw SHA256: ${OPENCLAW_INSTALL_SHA256}"
+  fi
 
   echo "Checksums pinned. Each script will be re-downloaded and verified before execution."
   echo "A mismatch means the upstream script changed between our two fetches - a red flag."
@@ -298,16 +315,56 @@ install_docker() {
     chmod 700 "${tmp_script}"
     bash "${tmp_script}"
   fi
+  systemctl enable --now docker
   usermod -aG docker "${OPENCLAW_USER}"
 }
 
-clone_openclaw_repo() {
-  print_step "Cloning OpenClaw repository"
-  if [[ -d "${OPENCLAW_REPO_DIR}" ]]; then
-    echo "Repository already exists at ${OPENCLAW_REPO_DIR}, skipping clone."
+install_node() {
+  print_step "Installing Node.js 22 LTS"
+  if command -v node &>/dev/null; then
+    local node_major
+    node_major="$(node --version 2>/dev/null | tr -d 'v' | cut -d. -f1)"
+    if [[ "${node_major}" -ge 22 ]]; then
+      echo "Node.js $(node --version) already installed, skipping."
+      return
+    fi
+    echo "Node.js $(node --version) found but 22+ required. Upgrading..."
+  fi
+
+  local pkg_manager
+  pkg_manager="$(detect_package_manager)"
+
+  case "${pkg_manager}" in
+    apt)
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y -qq nodejs
+      ;;
+    dnf | yum)
+      curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+      "${pkg_manager}" install -y -q nodejs
+      ;;
+    *)
+      echo "Install Node.js 22+ manually: https://nodejs.org/" >&2
+      exit 1
+      ;;
+  esac
+
+  echo "Node.js $(node --version) and npm $(npm --version) installed."
+}
+
+install_openclaw() {
+  print_step "Installing OpenClaw via official installer"
+  if command -v openclaw &>/dev/null; then
+    echo "OpenClaw already installed, skipping."
     return
   fi
-  sudo -u "${OPENCLAW_USER}" git clone https://github.com/openclaw/openclaw.git "${OPENCLAW_REPO_DIR}"
+
+  local tmp_script
+  tmp_script="$(mktemp /tmp/openclaw-install.XXXXXX.sh)"
+  trap 'rm -f "${tmp_script}"' RETURN
+  download_and_verify "https://openclaw.ai/install.sh" "${OPENCLAW_INSTALL_SHA256}" "${tmp_script}"
+  chmod 700 "${tmp_script}"
+  bash "${tmp_script}" -- --no-onboard
 }
 
 get_openclaw_uid() {
@@ -337,111 +394,273 @@ generate_secret() {
   openssl rand -hex 32
 }
 
-create_env_file() {
-  print_step "Generating .env file"
-  local env_file="${OPENCLAW_REPO_DIR}/.env"
-
-  if [[ -f "${env_file}" ]]; then
-    echo ".env already exists, skipping generation."
-    return
-  fi
-
-  local gateway_token
-  gateway_token="$(generate_secret)"
-  local keyring_password
-  keyring_password="$(generate_secret)"
-
-  install -o "${OPENCLAW_USER}" -g "${OPENCLAW_USER}" -m 600 /dev/null "${env_file}"
-
-  cat > "${env_file}" <<EOF
-OPENCLAW_IMAGE=${OPENCLAW_IMAGE_TAG}
-OPENCLAW_GATEWAY_TOKEN=${gateway_token}
-OPENCLAW_GATEWAY_BIND=loopback
-OPENCLAW_GATEWAY_PORT=18789
-
-OPENCLAW_CONFIG_DIR=${OPENCLAW_DATA_DIR}
-OPENCLAW_WORKSPACE_DIR=${OPENCLAW_DATA_DIR}/workspace
-
-GOG_KEYRING_PASSWORD=${keyring_password}
-XDG_CONFIG_HOME=/home/node/.openclaw
-EOF
-
-  chmod 600 "${env_file}"
-  chown "${OPENCLAW_USER}:${OPENCLAW_USER}" "${env_file}"
-  echo ".env written to ${env_file} with auto-generated secrets."
-}
-
-create_docker_compose_file() {
-  print_step "Writing docker-compose.yml"
-  local compose_file="${OPENCLAW_REPO_DIR}/docker-compose.yml"
-
-  if [[ -f "${compose_file}" ]]; then
-    echo "docker-compose.yml already exists, skipping."
-    return
-  fi
-
-  cat > "${compose_file}" <<'EOF'
-services:
-  openclaw-gateway:
-    image: ${OPENCLAW_IMAGE}
-    build: .
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - HOME=/home/node
-      - NODE_ENV=production
-      - TERM=xterm-256color
-      - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND}
-      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
-      - GOG_KEYRING_PASSWORD=${GOG_KEYRING_PASSWORD}
-      - XDG_CONFIG_HOME=${XDG_CONFIG_HOME}
-      - PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    volumes:
-      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-    ports:
-      - "127.0.0.1:${OPENCLAW_GATEWAY_PORT}:18789"
-    read_only: true
-    tmpfs:
-      - /tmp:size=128m,noexec,nosuid,nodev
-      - /home/node/.npm:size=64m,nosuid,nodev
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    mem_limit: 2g
-    memswap_limit: 2g
-    pids_limit: 256
-    cpus: 2.0
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:18789/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind", "${OPENCLAW_GATEWAY_BIND}",
-        "--port", "${OPENCLAW_GATEWAY_PORT}"
-      ]
-EOF
-
-  chown "${OPENCLAW_USER}:${OPENCLAW_USER}" "${compose_file}"
-}
-
 sanitize_for_json() {
   local input="$1"
   printf '%s' "${input}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+select_ai_provider() {
+  print_step "Selecting AI model provider"
+  echo ""
+  echo "Choose an AI model provider for the agent:"
+  echo ""
+  echo "  1) Anthropic Claude (claude-opus-4-6)  — commercial API key required"
+  echo "  2) MiniMax M2.5        — much cheaper (\$0.30/\$1.20 per 1M tokens), MIT license"
+  echo "  3) GLM-5 (Zhipu AI)   — very affordable (\$0.30/\$2.55 per 1M tokens), MIT license"
+  echo "  4) Custom              — any OpenAI-compatible API endpoint"
+  echo ""
+  echo "Note: Options 2 and 3 are open-weight models available via multiple API"
+  echo "providers (or self-hosted). They score competitively on agentic benchmarks"
+  echo "and cost a fraction of proprietary alternatives."
+  echo ""
+
+  local choice
+  while true; do
+    read -r -p "Enter choice [1-4] (default: 1): " choice
+    choice="${choice:-1}"
+    case "${choice}" in
+      1)
+        AI_PROVIDER="anthropic"
+        AI_MODEL="anthropic/claude-opus-4-6"
+        AI_API_KEY_ENV="ANTHROPIC_API_KEY"
+        echo ""
+        echo "Enter your Anthropic API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      2)
+        AI_PROVIDER="minimax"
+        AI_MODEL="minimax/MiniMax-M2.5"
+        AI_API_KEY_ENV="MINIMAX_API_KEY"
+        echo ""
+        echo "Enter your MiniMax API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      3)
+        AI_PROVIDER="zhipu"
+        AI_MODEL="zhipu/glm-5"
+        AI_API_KEY_ENV="ZHIPU_API_KEY"
+        echo ""
+        echo "Enter your Zhipu AI (GLM-5) API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      4)
+        AI_PROVIDER="custom"
+        echo ""
+        echo "Enter the model identifier (e.g. openai/gpt-4o, deepseek/deepseek-v3.2):"
+        read -r AI_MODEL
+        AI_API_KEY_ENV="OPENAI_API_KEY"
+        echo ""
+        echo "Enter the API base URL (leave blank for provider default):"
+        read -r AI_API_BASE_URL
+        echo ""
+        echo "Enter your API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      *)
+        echo "Invalid choice. Enter 1, 2, 3, or 4."
+        ;;
+    esac
+  done
+
+  echo ""
+  echo "Selected model: ${AI_MODEL}"
+}
+
+store_ai_api_key() {
+  local env_file="${OPENCLAW_DATA_DIR}/.env"
+
+  install -o "${OPENCLAW_USER}" -g "${OPENCLAW_USER}" -m 600 /dev/null "${env_file}"
+
+  local env_content="${AI_API_KEY_ENV}=${ai_api_key:-REPLACE_WITH_API_KEY}"
+  if [[ "${AI_PROVIDER}" == "custom" ]] && [[ -n "${AI_API_BASE_URL:-}" ]]; then
+    env_content="${env_content}
+OPENAI_API_BASE_URL=${AI_API_BASE_URL}"
+  fi
+
+  printf '%s\n' "${env_content}" > "${env_file}"
+  chmod 600 "${env_file}"
+  chown "${OPENCLAW_USER}:${OPENCLAW_USER}" "${env_file}"
+  echo "API key written to ${env_file}"
+
+  unset ai_api_key
+}
+
+select_channel() {
+  print_step "Selecting messaging channel"
+
+  if [[ -n "${OPENCLAW_CHANNEL:-}" ]]; then
+    CHANNEL="${OPENCLAW_CHANNEL}"
+    echo "Using channel from OPENCLAW_CHANNEL env var: ${CHANNEL}"
+    case "${CHANNEL}" in
+      telegram | discord) ;;
+      whatsapp | slack) NEEDS_ONBOARD_WIZARD=true ;;
+      none) ;;
+      *)
+        echo "Unsupported OPENCLAW_CHANNEL value: ${CHANNEL}. Use telegram, discord, whatsapp, slack, or none." >&2
+        exit 1
+        ;;
+    esac
+    return
+  fi
+
+  echo ""
+  echo "Choose a messaging channel to connect to your agent:"
+  echo ""
+  echo "  1) Telegram  - Bot token + user ID (configure here)"
+  echo "  2) Discord   - Bot token + user ID (configure here)"
+  echo "  3) WhatsApp  - Requires OAuth (completed via onboard wizard)"
+  echo "  4) Slack     - Requires OAuth (completed via onboard wizard)"
+  echo "  5) None      - Configure a channel later"
+  echo ""
+
+  local choice
+  while true; do
+    read -r -p "Enter choice [1-5] (default: 1): " choice
+    choice="${choice:-1}"
+    case "${choice}" in
+      1) CHANNEL="telegram"; break ;;
+      2) CHANNEL="discord"; break ;;
+      3) CHANNEL="whatsapp"; NEEDS_ONBOARD_WIZARD=true; break ;;
+      4) CHANNEL="slack"; NEEDS_ONBOARD_WIZARD=true; break ;;
+      5) CHANNEL="none"; break ;;
+      *) echo "Invalid choice. Enter 1, 2, 3, 4, or 5." ;;
+    esac
+  done
+
+  echo "Selected channel: ${CHANNEL}"
+}
+
+collect_channel_credentials() {
+  telegram_bot_token=""
+  telegram_user_id=""
+  discord_bot_token=""
+  discord_user_id=""
+
+  case "${CHANNEL}" in
+    telegram)
+      if [[ -n "${OPENCLAW_TELEGRAM_BOT_TOKEN+set}" ]]; then
+        telegram_bot_token="${OPENCLAW_TELEGRAM_BOT_TOKEN}"
+      else
+        echo ""
+        echo "Enter your Telegram bot token (leave blank to configure later):"
+        read -r -s telegram_bot_token
+      fi
+
+      if [[ -n "${OPENCLAW_TELEGRAM_USER_ID+set}" ]]; then
+        telegram_user_id="${OPENCLAW_TELEGRAM_USER_ID}"
+      else
+        echo "Enter your Telegram user ID (leave blank to configure later):"
+        read -r telegram_user_id
+      fi
+      ;;
+    discord)
+      if [[ -n "${OPENCLAW_DISCORD_BOT_TOKEN+set}" ]]; then
+        discord_bot_token="${OPENCLAW_DISCORD_BOT_TOKEN}"
+      else
+        echo ""
+        echo "Enter your Discord bot token (leave blank to configure later):"
+        read -r -s discord_bot_token
+      fi
+
+      if [[ -n "${OPENCLAW_DISCORD_USER_ID+set}" ]]; then
+        discord_user_id="${OPENCLAW_DISCORD_USER_ID}"
+      else
+        echo "Enter your Discord user ID (leave blank to configure later):"
+        read -r discord_user_id
+      fi
+      ;;
+    whatsapp | slack)
+      echo ""
+      echo "${CHANNEL} requires OAuth authentication."
+      echo "The onboard wizard will run after the daemon starts."
+      ;;
+    none)
+      echo "No channel selected. Configure one later in openclaw.json."
+      ;;
+  esac
+}
+
+build_channel_json() {
+  local channel_json=""
+
+  case "${CHANNEL}" in
+    telegram)
+      local tg_enabled="false"
+      local safe_bot_token="REPLACE_WITH_BOT_TOKEN"
+      local safe_user_id="REPLACE_WITH_USER_ID"
+
+      if [[ -n "${telegram_bot_token}" ]]; then
+        tg_enabled="true"
+        safe_bot_token="$(sanitize_for_json "${telegram_bot_token}")"
+        safe_bot_token="${safe_bot_token:1:-1}"
+      fi
+
+      if [[ -n "${telegram_user_id}" ]]; then
+        safe_user_id="$(sanitize_for_json "tg:${telegram_user_id}")"
+        safe_user_id="${safe_user_id:1:-1}"
+      fi
+
+      channel_json="$(cat <<CEOF
+    "telegram": {
+      "enabled": ${tg_enabled},
+      "botToken": "${safe_bot_token}",
+      "dmPolicy": "pairing",
+      "allowFrom": ["${safe_user_id}"],
+      "groups": { "*": { "requireMention": true } }
+    }
+CEOF
+)"
+      ;;
+    discord)
+      local dc_enabled="false"
+      local safe_bot_token="REPLACE_WITH_BOT_TOKEN"
+      local safe_user_id="REPLACE_WITH_USER_ID"
+
+      if [[ -n "${discord_bot_token}" ]]; then
+        dc_enabled="true"
+        safe_bot_token="$(sanitize_for_json "${discord_bot_token}")"
+        safe_bot_token="${safe_bot_token:1:-1}"
+      fi
+
+      if [[ -n "${discord_user_id}" ]]; then
+        safe_user_id="$(sanitize_for_json "discord:${discord_user_id}")"
+        safe_user_id="${safe_user_id:1:-1}"
+      fi
+
+      channel_json="$(cat <<CEOF
+    "discord": {
+      "enabled": ${dc_enabled},
+      "token": "${safe_bot_token}",
+      "dmPolicy": "pairing",
+      "allowFrom": ["${safe_user_id}"],
+      "groups": { "*": { "requireMention": true } }
+    }
+CEOF
+)"
+      ;;
+    whatsapp)
+      channel_json='    "whatsapp": {
+      "enabled": false,
+      "dmPolicy": "pairing",
+      "groups": { "*": { "requireMention": true } }
+    }'
+      ;;
+    slack)
+      channel_json='    "slack": {
+      "enabled": false,
+      "dmPolicy": "pairing"
+    }'
+      ;;
+    none)
+      channel_json=""
+      ;;
+  esac
+
+  printf '%s' "${channel_json}"
 }
 
 create_openclaw_config() {
@@ -453,38 +672,32 @@ create_openclaw_config() {
     return
   fi
 
-  echo ""
-  echo "Enter your Telegram bot token (leave blank to configure later):"
-  read -r -s telegram_bot_token
-
-  echo "Enter your Telegram user ID (leave blank to configure later):"
-  read -r telegram_user_id
-
-  local telegram_enabled="false"
-  local safe_bot_token="REPLACE_WITH_BOT_TOKEN"
-  local safe_user_id="REPLACE_WITH_USER_ID"
-
-  if [[ -n "${telegram_bot_token}" ]]; then
-    telegram_enabled="true"
-    safe_bot_token="$(sanitize_for_json "${telegram_bot_token}")"
-    safe_bot_token="${safe_bot_token:1:-1}"
-  fi
-
-  if [[ -n "${telegram_user_id}" ]]; then
-    safe_user_id="$(sanitize_for_json "${telegram_user_id}")"
-    safe_user_id="${safe_user_id:1:-1}"
-  fi
+  local channel_json
+  channel_json="$(build_channel_json)"
 
   install -o "${OPENCLAW_USER}" -g "${OPENCLAW_USER}" -m 600 /dev/null "${config_file}"
+
+  local channels_block
+  if [[ -n "${channel_json}" ]]; then
+    channels_block="$(cat <<CHEOF
+  "channels": {
+${channel_json}
+  },
+CHEOF
+)"
+  else
+    channels_block='  "channels": {},'
+  fi
 
   cat > "${config_file}" <<EOF
 {
   "gateway": {
+    "mode": "local",
     "bind": "loopback",
     "port": 18789,
     "auth": {
       "mode": "token",
-      "allowTailscale": false,
+      "allowTailscale": true,
       "rateLimit": {
         "maxAttempts": 10,
         "windowMs": 60000,
@@ -502,25 +715,27 @@ create_openclaw_config() {
   "agents": {
     "defaults": {
       "model": {
-        "primary": "anthropic/claude-opus-4-6"
+        "primary": "${AI_MODEL}"
       },
       "sandbox": {
-        "mode": "all",
+        "mode": "off",
         "scope": "agent",
         "workspaceAccess": "rw"
       }
     }
   },
-  "channels": {
-    "telegram": {
-      "enabled": ${telegram_enabled},
-      "botToken": "${safe_bot_token}",
-      "dmPolicy": "allowlist",
-      "allowFrom": ["${safe_user_id}"]
-    }
+  "tools": {
+    "fs": { "workspaceOnly": true },
+    "elevated": { "enabled": false }
   },
+${channels_block}
   "session": {
-    "dmScope": "per-channel-peer"
+    "dmScope": "per-channel-peer",
+    "reset": {
+      "mode": "daily",
+      "atHour": 4,
+      "idleMinutes": 120
+    }
   },
   "logging": {
     "redactSensitive": "tools"
@@ -536,7 +751,7 @@ EOF
   chmod 600 "${config_file}"
   chown "${OPENCLAW_USER}:${OPENCLAW_USER}" "${config_file}"
 
-  unset telegram_bot_token
+  unset telegram_bot_token discord_bot_token
 }
 
 setup_log_rotation() {
@@ -565,7 +780,6 @@ install_update_script() {
 set -euo pipefail
 umask 077
 
-OPENCLAW_REPO_DIR="/home/openclaw/openclaw"
 OPENCLAW_DATA_DIR="/home/openclaw/.openclaw"
 BACKUP_DIR="/home/openclaw/backups"
 LOG_FILE="/var/log/openclaw-update.log"
@@ -610,17 +824,10 @@ prune_old_backups() {
   log "Backups older than ${BACKUP_RETENTION_DAYS} days pruned"
 }
 
-update_npm_package() {
-  npm install -g openclaw@latest >> "${LOG_FILE}" 2>&1
-  log "openclaw npm package updated to latest"
-}
-
-rebuild_and_restart_container() {
-  cd "${OPENCLAW_REPO_DIR}"
-  git pull origin main >> "${LOG_FILE}" 2>&1
-  docker compose build >> "${LOG_FILE}" 2>&1
-  docker compose up -d openclaw-gateway >> "${LOG_FILE}" 2>&1
-  log "Docker image rebuilt and container restarted"
+update_and_restart() {
+  npm update -g openclaw@latest >> "${LOG_FILE}" 2>&1
+  systemctl restart openclaw-gateway >> "${LOG_FILE}" 2>&1
+  log "OpenClaw updated and gateway restarted"
 }
 
 main() {
@@ -629,8 +836,7 @@ main() {
   log "Starting OpenClaw update"
   create_backup
   prune_old_backups
-  update_npm_package
-  rebuild_and_restart_container
+  update_and_restart
   log "Update complete"
 }
 
@@ -640,6 +846,16 @@ UPDATEEOF
 
   chmod 700 "${update_script_dest}"
   chown root:root "${update_script_dest}"
+
+  local restore_script_dest="/usr/local/bin/openclaw-restore.sh"
+  local bundled_restore_script
+  bundled_restore_script="$(dirname "$(realpath "$0")")/openclaw-restore.sh"
+
+  if [[ -f "${bundled_restore_script}" ]]; then
+    cp "${bundled_restore_script}" "${restore_script_dest}"
+    chmod 700 "${restore_script_dest}"
+    chown root:root "${restore_script_dest}"
+  fi
 }
 
 setup_auto_update_cron() {
@@ -652,19 +868,23 @@ setup_auto_update_cron() {
   chmod 644 "${cron_file}"
   chown root:root "${cron_file}"
   echo "Cron job written to ${cron_file} (runs Sundays at 03:00)"
+
+  local npm_cron="/etc/cron.d/openclaw-npm-security"
+  echo "0 2 * * * root npm update -g npm@latest >> /var/log/openclaw-update.log 2>&1" > "${npm_cron}"
+  chmod 644 "${npm_cron}"
+  chown root:root "${npm_cron}"
+  echo "Daily npm update cron written to ${npm_cron} (runs daily at 02:00)"
 }
 
-build_and_start_container() {
-  print_step "Building Docker image and starting container"
-  cd "${OPENCLAW_REPO_DIR}"
-  sudo -u "${OPENCLAW_USER}" docker compose build
-  sudo -u "${OPENCLAW_USER}" docker compose up -d openclaw-gateway
+start_openclaw_daemon() {
+  print_step "Installing and starting OpenClaw daemon"
+  sudo -u "${OPENCLAW_USER}" openclaw onboard --install-daemon --non-interactive || {
+    echo "Daemon install via onboard failed. Starting manually..." >&2
+    systemctl enable --now openclaw-gateway 2>/dev/null || true
+  }
   echo ""
-  echo "Container started. Tailing logs for 10 seconds..."
-  sudo -u "${OPENCLAW_USER}" docker compose logs --tail=20 openclaw-gateway &
-  local log_pid=$!
-  sleep 10
-  kill "${log_pid}" 2>/dev/null || true
+  echo "Daemon installed. Checking status..."
+  systemctl status openclaw-gateway --no-pager 2>/dev/null || true
 }
 
 verify_gateway_binding() {
@@ -673,9 +893,9 @@ verify_gateway_binding() {
   if ss -tlnp | grep 18789 | grep -q "127.0.0.1"; then
     echo "OK: Gateway is correctly bound to 127.0.0.1 only."
   elif ss -tlnp | grep -q 18789; then
-    echo "WARNING: Gateway is listening but not on 127.0.0.1 - check docker-compose.yml ports binding." >&2
+    echo "WARNING: Gateway is listening but not on 127.0.0.1 - check gateway.bind in openclaw.json." >&2
   else
-    echo "Gateway not yet listening - check container logs." >&2
+    echo "Gateway not yet listening - check 'systemctl status openclaw-gateway'." >&2
   fi
 }
 
@@ -684,12 +904,12 @@ run_security_audit() {
 
   echo "Waiting for gateway to be ready (up to 30s)..."
   local elapsed=0
-  until sudo -u "${OPENCLAW_USER}" docker compose -f "${OPENCLAW_REPO_DIR}/docker-compose.yml" exec -T openclaw-gateway openclaw --version &>/dev/null; do
+  until sudo -u "${OPENCLAW_USER}" openclaw --version &>/dev/null; do
     if [[ "${elapsed}" -ge 30 ]]; then
       echo "Gateway did not become ready within 30s - skipping automated audit."
       echo "Run manually once it's up:"
-      echo "  docker exec -it openclaw-gateway openclaw doctor"
-      echo "  docker exec -it openclaw-gateway openclaw security audit --deep"
+      echo "  openclaw doctor --fix"
+      echo "  openclaw security audit --deep"
       return
     fi
     sleep 2
@@ -697,15 +917,13 @@ run_security_audit() {
   done
 
   echo ""
-  echo "--- openclaw doctor ---"
-  sudo -u "${OPENCLAW_USER}" docker compose -f "${OPENCLAW_REPO_DIR}/docker-compose.yml" \
-    exec -T openclaw-gateway openclaw doctor || true
+  echo "--- openclaw doctor --fix ---"
+  sudo -u "${OPENCLAW_USER}" openclaw doctor --fix || true
 
   echo ""
   echo "--- openclaw security audit --deep ---"
   local audit_exit_code=0
-  sudo -u "${OPENCLAW_USER}" docker compose -f "${OPENCLAW_REPO_DIR}/docker-compose.yml" \
-    exec -T openclaw-gateway openclaw security audit --deep || audit_exit_code=$?
+  sudo -u "${OPENCLAW_USER}" openclaw security audit --deep || audit_exit_code=$?
 
   if [[ "${audit_exit_code}" -ne 0 ]]; then
     echo ""
@@ -714,6 +932,85 @@ run_security_audit() {
   else
     echo ""
     echo "Security audit passed with 0 critical issues."
+  fi
+}
+
+configure_tailscale_access() {
+  print_step "Configuring Tailscale access for Control UI"
+
+  if [[ -n "${OPENCLAW_SKIP_TAILSCALE_AUTH:-}" ]]; then
+    echo "OPENCLAW_SKIP_TAILSCALE_AUTH is set, skipping Tailscale authentication."
+    return
+  fi
+
+  echo ""
+  echo "Tailscale provides secure remote access to the Control UI without"
+  echo "opening any public ports. Free tier available at tailscale.com."
+  echo ""
+
+  local auth_choice
+  read -r -p "Authenticate Tailscale now? [Y/n]: " auth_choice
+  auth_choice="${auth_choice:-Y}"
+
+  if [[ ! "${auth_choice}" =~ ^[Yy] ]]; then
+    echo "Skipped. Run 'tailscale up' later to authenticate."
+    return
+  fi
+
+  echo "Running 'tailscale up' - follow the printed URL to authenticate..."
+  if ! tailscale up; then
+    echo "Tailscale authentication did not complete. Run 'tailscale up' later." >&2
+    return
+  fi
+
+  echo ""
+  local serve_choice
+  read -r -p "Expose Control UI via Tailscale Serve now? [Y/n]: " serve_choice
+  serve_choice="${serve_choice:-Y}"
+
+  if [[ "${serve_choice}" =~ ^[Yy] ]]; then
+    tailscale serve https / http://127.0.0.1:18789
+    local ts_hostname
+    ts_hostname="$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null || echo "your-machine.tailnet")"
+    echo ""
+    echo "Control UI is live at: https://${ts_hostname}/"
+  fi
+}
+
+offer_onboard_wizard() {
+  if [[ "${NEEDS_ONBOARD_WIZARD}" != "true" ]]; then
+    return
+  fi
+
+  print_step "Running OpenClaw onboard wizard for ${CHANNEL}"
+
+  if [[ -n "${OPENCLAW_SKIP_ONBOARD:-}" ]]; then
+    echo "OPENCLAW_SKIP_ONBOARD is set, skipping onboard wizard."
+    echo "Run manually later:"
+    echo "  openclaw onboard --channel ${CHANNEL}"
+    return
+  fi
+
+  echo ""
+  echo "${CHANNEL} requires OAuth authentication that the onboard wizard handles."
+  echo "The wizard will open a URL you need to visit to authorize access."
+  echo ""
+
+  local run_choice
+  read -r -p "Run the onboard wizard now? [Y/n]: " run_choice
+  run_choice="${run_choice:-Y}"
+
+  if [[ "${run_choice}" =~ ^[Yy] ]]; then
+    echo ""
+    sudo -u "${OPENCLAW_USER}" openclaw onboard --channel "${CHANNEL}" || {
+        echo ""
+        echo "Onboard wizard exited with an error." >&2
+        echo "Run manually later:" >&2
+        echo "  openclaw onboard --channel ${CHANNEL}" >&2
+      }
+  else
+    echo "Skipped. Run the onboard wizard later:"
+    echo "  openclaw onboard --channel ${CHANNEL}"
   fi
 }
 
@@ -727,20 +1024,77 @@ print_next_steps() {
   echo "Verify you can connect before closing this session:"
   echo "  ssh openclaw@<your-server-ip>"
   echo ""
-  echo "Next steps:"
+
+  echo "Control UI is available at http://127.0.0.1:18789/ (no channel needed)."
+  echo "You can chat with your agent there immediately."
   echo ""
-  echo "1. Authenticate Tailscale:"
-  echo "   tailscale up"
+
+  local has_remaining=false
+
+  if ! tailscale status &>/dev/null; then
+    has_remaining=true
+    echo "Remaining steps:"
+    echo ""
+    echo "1. Authenticate Tailscale:"
+    echo "   tailscale up"
+    echo ""
+    echo "2. Expose Control UI via Tailscale:"
+    echo "   tailscale serve https / http://127.0.0.1:18789"
+    echo ""
+    echo "   Or via SSH tunnel from your local machine:"
+    echo "   ssh -N -L 18789:127.0.0.1:18789 openclaw@<your-server-ip>"
+    echo "   Then open: http://127.0.0.1:18789/"
+    echo ""
+  fi
+
+  case "${CHANNEL}" in
+    telegram)
+      if grep -q "REPLACE_WITH_BOT_TOKEN" "${OPENCLAW_DATA_DIR}/openclaw.json" 2>/dev/null; then
+        has_remaining=true
+        echo "Fill in Telegram credentials:"
+        echo "  nano ${OPENCLAW_DATA_DIR}/openclaw.json"
+        echo ""
+      fi
+      ;;
+    discord)
+      if grep -q "REPLACE_WITH_BOT_TOKEN" "${OPENCLAW_DATA_DIR}/openclaw.json" 2>/dev/null; then
+        has_remaining=true
+        echo "Fill in Discord credentials:"
+        echo "  nano ${OPENCLAW_DATA_DIR}/openclaw.json"
+        echo ""
+      fi
+      ;;
+    whatsapp | slack)
+      if [[ "${NEEDS_ONBOARD_WIZARD}" == "true" ]]; then
+        has_remaining=true
+        echo "Complete ${CHANNEL} OAuth setup:"
+        echo "  openclaw onboard --channel ${CHANNEL}"
+        echo ""
+      fi
+      ;;
+    none)
+      has_remaining=true
+      echo "Configure a messaging channel:"
+      echo "  openclaw onboard"
+      echo "  (or edit ${OPENCLAW_DATA_DIR}/openclaw.json manually)"
+      echo ""
+      ;;
+  esac
+
+  echo "Sandbox is off by default. To enable sandboxed tool execution:"
+  echo "  1. Build the sandbox image: scripts/sandbox-setup.sh"
+  echo "  2. Set sandbox.mode to \"all\" in openclaw.json"
   echo ""
-  echo "2. Expose Control UI via Tailscale (recommended):"
-  echo "   tailscale serve https / http://127.0.0.1:18789"
-  echo ""
-  echo "   Or via SSH tunnel from your local machine:"
-  echo "   ssh -N -L 18789:127.0.0.1:18789 openclaw@<your-server-ip>"
-  echo "   Then open: http://127.0.0.1:18789/"
-  echo ""
-  echo "3. Fill in placeholders if you skipped Telegram setup:"
-  echo "   nano ${OPENCLAW_DATA_DIR}/openclaw.json"
+
+  if [[ "${has_remaining}" != "true" ]]; then
+    echo "All steps completed. Your agent is ready to use."
+    echo ""
+  fi
+
+  echo "Useful commands:"
+  echo "  openclaw configure          - interactive configuration editor"
+  echo "  openclaw config set <k> <v> - set a config value"
+  echo "  openclaw doctor --fix       - diagnose and auto-repair issues"
   echo ""
   echo "Auto-updates: every Sunday at 03:00 via /etc/cron.d/openclaw-update"
   echo "Update logs:  /var/log/openclaw-update.log (rotated weekly, kept 12 weeks)"
@@ -759,15 +1113,20 @@ main() {
   configure_fail2ban
   install_tailscale
   install_docker
-  clone_openclaw_repo
+  install_node
+  install_openclaw
   create_data_directories
-  create_env_file
-  create_docker_compose_file
+  select_ai_provider
+  select_channel
+  collect_channel_credentials
+  store_ai_api_key
   create_openclaw_config
   setup_auto_update_cron
-  build_and_start_container
+  start_openclaw_daemon
   verify_gateway_binding
   run_security_audit
+  configure_tailscale_access
+  offer_onboard_wizard
   print_next_steps
 }
 
