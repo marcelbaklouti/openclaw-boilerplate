@@ -48,11 +48,6 @@ prune_old_backups() {
   log "Backups older than ${BACKUP_RETENTION_DAYS} days pruned"
 }
 
-update_npm_package() {
-  npm install -g openclaw@latest >> "${LOG_FILE}" 2>&1
-  log "openclaw npm package updated to latest"
-}
-
 rebuild_and_restart_container() {
   cd "${OPENCLAW_REPO_DIR}"
   git pull origin main >> "${LOG_FILE}" 2>&1
@@ -67,7 +62,6 @@ main() {
   log "Starting OpenClaw update"
   create_backup
   prune_old_backups
-  update_npm_package
   rebuild_and_restart_container
   log "Update complete"
 }

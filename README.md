@@ -105,7 +105,6 @@ Telegram credentials cannot be passed via env var - enter them interactively or 
 - Acquires an exclusive lock (prevents concurrent runs from corrupting state)
 - Creates a timestamped, root-only backup of `/home/openclaw/.openclaw` to `/home/openclaw/backups`
 - Prunes backups older than 30 days
-- Runs `npm install -g openclaw@latest`
 - Pulls the latest repo changes and rebuilds the Docker image
 - Restarts the container
 
