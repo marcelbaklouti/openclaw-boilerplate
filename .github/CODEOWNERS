@@ -1,0 +1,8 @@
+* @marcelbaklouti
+
+setup.sh @marcelbaklouti
+openclaw-update.sh @marcelbaklouti
+docker-compose.yml @marcelbaklouti
+.github/ @marcelbaklouti
+.env.example @marcelbaklouti
+openclaw.json.example @marcelbaklouti
