@@ -2,7 +2,6 @@
 set -euo pipefail
 umask 077
 
-OPENCLAW_REPO_DIR="/home/openclaw/openclaw"
 OPENCLAW_DATA_DIR="/home/openclaw/.openclaw"
 BACKUP_DIR="/home/openclaw/backups"
 LOG_FILE="/var/log/openclaw-update.log"
@@ -48,12 +47,10 @@ prune_old_backups() {
   log "Backups older than ${BACKUP_RETENTION_DAYS} days pruned"
 }
 
-rebuild_and_restart_container() {
-  cd "${OPENCLAW_REPO_DIR}"
-  git pull origin main >> "${LOG_FILE}" 2>&1
-  docker compose build >> "${LOG_FILE}" 2>&1
-  docker compose up -d openclaw-gateway >> "${LOG_FILE}" 2>&1
-  log "Docker image rebuilt and container restarted"
+update_and_restart() {
+  npm update -g openclaw@latest >> "${LOG_FILE}" 2>&1
+  systemctl restart openclaw-gateway >> "${LOG_FILE}" 2>&1
+  log "OpenClaw updated and gateway restarted"
 }
 
 main() {
@@ -62,7 +59,7 @@ main() {
   log "Starting OpenClaw update"
   create_backup
   prune_old_backups
-  rebuild_and_restart_container
+  update_and_restart
   log "Update complete"
 }
 

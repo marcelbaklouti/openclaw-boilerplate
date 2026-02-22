@@ -1,10 +1,11 @@
 {
   "gateway": {
+    "mode": "local",
     "bind": "loopback",
     "port": 18789,
     "auth": {
       "mode": "token",
-      "allowTailscale": false,
+      "allowTailscale": true,
       "rateLimit": {
         "maxAttempts": 10,
         "windowMs": 60000,
@@ -26,22 +27,48 @@
         "_comment": "Alternatives: minimax/MiniMax-M2.5 ($0.30/$1.20 per 1M tokens), zhipu/glm-5 ($0.30/$2.55 per 1M tokens)"
       },
       "sandbox": {
-        "mode": "all",
+        "mode": "off",
         "scope": "agent",
         "workspaceAccess": "rw"
       }
     }
   },
+  "tools": {
+    "fs": { "workspaceOnly": true },
+    "elevated": { "enabled": false }
+  },
   "channels": {
     "telegram": {
       "enabled": true,
       "botToken": "REPLACE_WITH_BOT_TOKEN",
-      "dmPolicy": "allowlist",
-      "allowFrom": ["tg:REPLACE_WITH_YOUR_TELEGRAM_USER_ID"]
+      "dmPolicy": "pairing",
+      "allowFrom": ["tg:REPLACE_WITH_YOUR_TELEGRAM_USER_ID"],
+      "groups": { "*": { "requireMention": true } }
+    },
+    "discord": {
+      "enabled": false,
+      "token": "REPLACE_WITH_BOT_TOKEN",
+      "dmPolicy": "pairing",
+      "allowFrom": ["discord:REPLACE_WITH_YOUR_DISCORD_USER_ID"],
+      "groups": { "*": { "requireMention": true } }
+    },
+    "whatsapp": {
+      "enabled": false,
+      "dmPolicy": "pairing",
+      "groups": { "*": { "requireMention": true } }
+    },
+    "slack": {
+      "enabled": false,
+      "dmPolicy": "pairing"
     }
   },
   "session": {
-    "dmScope": "per-channel-peer"
+    "dmScope": "per-channel-peer",
+    "reset": {
+      "mode": "daily",
+      "atHour": 4,
+      "idleMinutes": 120
+    }
   },
   "logging": {
     "redactSensitive": "tools"

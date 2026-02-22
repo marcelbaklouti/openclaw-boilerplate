@@ -55,15 +55,54 @@ exit 0
 STUB
 chmod +x /usr/local/lib/openclaw-test/stub-tailscale
 
+cat > /usr/local/lib/openclaw-test/stub-systemctl <<'STUB'
+#!/usr/bin/env bash
+echo "[test-stub] systemctl $* (skipped)"
+exit 0
+STUB
+chmod +x /usr/local/lib/openclaw-test/stub-systemctl
+
 # Pre-install stubs so setup.sh skips download steps
 cp /usr/local/lib/openclaw-test/stub-docker /usr/local/bin/docker
 cp /usr/local/lib/openclaw-test/stub-tailscale /usr/local/bin/tailscale
+cp /usr/local/lib/openclaw-test/stub-systemctl /usr/local/bin/systemctl
 
-# Pre-create the openclaw repo directory so clone is skipped
-# (we can't clone from github in a hermetic test)
+cat > /usr/local/lib/openclaw-test/stub-openclaw <<'STUB'
+#!/usr/bin/env bash
+echo "[test-stub] openclaw $* (skipped)"
+exit 0
+STUB
+chmod +x /usr/local/lib/openclaw-test/stub-openclaw
+cp /usr/local/lib/openclaw-test/stub-openclaw /usr/local/bin/openclaw
+
+cat > /usr/local/lib/openclaw-test/stub-npm <<'STUB'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "10.0.0"
+  exit 0
+fi
+echo "[test-stub] npm $* (skipped)"
+exit 0
+STUB
+chmod +x /usr/local/lib/openclaw-test/stub-npm
+cp /usr/local/lib/openclaw-test/stub-npm /usr/local/bin/npm
+
+cat > /usr/local/lib/openclaw-test/stub-node <<'STUB'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  echo "v22.0.0"
+  exit 0
+fi
+echo "[test-stub] node $* (skipped)"
+exit 0
+STUB
+chmod +x /usr/local/lib/openclaw-test/stub-node
+cp /usr/local/lib/openclaw-test/stub-node /usr/local/bin/node
+
 useradd -r -m -d /home/openclaw -s /bin/bash openclaw 2>/dev/null || true
-mkdir -p /home/openclaw/openclaw
-chown openclaw:openclaw /home/openclaw/openclaw
+
+# Create docker group since the real Docker install isn't running
+groupadd -f docker
 
 # Stub out passwd to avoid interactive prompt
 cat > /usr/local/bin/passwd <<'STUB'
@@ -73,9 +112,6 @@ exit 0
 STUB
 chmod +x /usr/local/bin/passwd
 
-# Stub out git clone (already pre-created)
-GIT_REAL="$(command -v git)"
-
 # Stub ss for gateway verification
 cat > /usr/local/bin/ss <<'STUB'
 #!/usr/bin/env bash
@@ -83,6 +119,10 @@ cat > /usr/local/bin/ss <<'STUB'
 echo "LISTEN 0 4096 127.0.0.1:18789 0.0.0.0:*"
 STUB
 chmod +x /usr/local/bin/ss
+
+# Set env vars for non-interactive channel and Tailscale setup
+export OPENCLAW_CHANNEL=telegram
+export OPENCLAW_SKIP_TAILSCALE_AUTH=1
 
 # Run setup.sh - feed default answers for interactive prompts:
 #   Line 1: AI provider choice (1 = Anthropic, the default)
@@ -205,42 +245,53 @@ fi
 
 section "Validating generated config files"
 
-ENV_FILE="/home/openclaw/openclaw/.env"
-if [[ -f "${ENV_FILE}" ]]; then
-  pass ".env file created"
+CONFIG_FILE="/home/openclaw/.openclaw/openclaw.json"
 
-  ENV_PERMS=$(stat -c '%a' "${ENV_FILE}")
-  if [[ "${ENV_PERMS}" == "600" ]]; then
-    pass ".env permissions are 600"
-  else
-    fail ".env permissions are ${ENV_PERMS}, expected 600"
-  fi
-
-  if grep -q "OPENCLAW_GATEWAY_TOKEN=" "${ENV_FILE}"; then
-    TOKEN_VAL=$(grep "OPENCLAW_GATEWAY_TOKEN=" "${ENV_FILE}" | cut -d= -f2)
-    TOKEN_LEN=${#TOKEN_VAL}
-    if [[ "${TOKEN_LEN}" -eq 64 ]]; then
-      pass "gateway token is 64 hex chars"
-    else
-      fail "gateway token length is ${TOKEN_LEN}, expected 64"
-    fi
-  else
-    fail "OPENCLAW_GATEWAY_TOKEN not found in .env"
-  fi
-
-  if grep -q "GOG_KEYRING_PASSWORD=" "${ENV_FILE}"; then
-    pass "keyring password present in .env"
-  else
-    fail "GOG_KEYRING_PASSWORD not found in .env"
-  fi
-
-  if grep -q "OPENCLAW_GATEWAY_BIND=loopback" "${ENV_FILE}"; then
-    pass "gateway bind set to loopback"
-  else
-    fail "gateway bind not set to loopback"
-  fi
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+gw = cfg.get('gateway', {})
+assert gw.get('mode') == 'local', 'gateway.mode not local'
+" 2>/dev/null; then
+  pass "gateway.mode set to local"
 else
-  fail ".env file not created"
+  fail "gateway.mode not set to local"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+gw = cfg.get('gateway', {})
+assert gw.get('auth', {}).get('allowTailscale') == True, 'allowTailscale not true'
+" 2>/dev/null; then
+  pass "gateway.auth.allowTailscale set to true"
+else
+  fail "gateway.auth.allowTailscale not set to true"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+tools = cfg.get('tools', {})
+assert tools.get('fs', {}).get('workspaceOnly') == True, 'fs.workspaceOnly not true'
+assert tools.get('elevated', {}).get('enabled') == False, 'elevated.enabled not false'
+" 2>/dev/null; then
+  pass "tools security baseline configured"
+else
+  fail "tools security baseline not configured"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+reset = cfg.get('session', {}).get('reset', {})
+assert reset.get('mode') == 'daily', 'session.reset.mode not daily'
+assert reset.get('atHour') == 4, 'session.reset.atHour not 4'
+assert reset.get('idleMinutes') == 120, 'session.reset.idleMinutes not 120'
+" 2>/dev/null; then
+  pass "session.reset configured for daily resets"
+else
+  fail "session.reset not configured"
 fi
 
 API_ENV_FILE="/home/openclaw/.openclaw/.env"
@@ -263,7 +314,6 @@ else
   fail "API key env file not created"
 fi
 
-CONFIG_FILE="/home/openclaw/.openclaw/openclaw.json"
 if [[ -f "${CONFIG_FILE}" ]]; then
   pass "openclaw.json created"
 
@@ -281,50 +331,40 @@ if [[ -f "${CONFIG_FILE}" ]]; then
     fail "openclaw.json is not valid JSON"
   fi
 
-  if grep -q '"dmPolicy": "allowlist"' "${CONFIG_FILE}"; then
-    pass "DM policy set to allowlist"
+  if grep -q '"dmPolicy": "pairing"' "${CONFIG_FILE}"; then
+    pass "DM policy set to pairing"
   else
-    fail "DM policy not set to allowlist"
+    fail "DM policy not set to pairing"
   fi
 
-  if grep -q '"mode": "all"' "${CONFIG_FILE}"; then
-    pass "sandbox mode set to all"
+  if grep -q '"mode": "off"' "${CONFIG_FILE}"; then
+    pass "sandbox mode set to off"
   else
-    fail "sandbox mode not set to all"
+    fail "sandbox mode not set to off"
+  fi
+
+  if grep -q '"telegram"' "${CONFIG_FILE}"; then
+    pass "telegram channel present in config"
+  else
+    fail "telegram channel not found in config"
+  fi
+
+  if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+ch = cfg.get('channels', {})
+tg = ch.get('telegram', {})
+assert 'botToken' in tg, 'missing botToken'
+assert 'allowFrom' in tg, 'missing allowFrom'
+assert tg.get('dmPolicy') == 'pairing', 'wrong dmPolicy'
+assert tg.get('groups', {}).get('*', {}).get('requireMention') == True, 'missing groups mention gating'
+" 2>/dev/null; then
+    pass "telegram channel structure is valid"
+  else
+    fail "telegram channel structure is invalid"
   fi
 else
   fail "openclaw.json not created"
-fi
-
-COMPOSE_FILE="/home/openclaw/openclaw/docker-compose.yml"
-if [[ -f "${COMPOSE_FILE}" ]]; then
-  pass "docker-compose.yml created"
-
-  if grep -q "127.0.0.1" "${COMPOSE_FILE}"; then
-    pass "docker-compose binds to 127.0.0.1"
-  else
-    fail "docker-compose does not bind to 127.0.0.1"
-  fi
-
-  if grep -q "read_only: true" "${COMPOSE_FILE}"; then
-    pass "container filesystem is read-only"
-  else
-    fail "container filesystem not read-only"
-  fi
-
-  if grep -q "no-new-privileges" "${COMPOSE_FILE}"; then
-    pass "no-new-privileges set"
-  else
-    fail "no-new-privileges not set"
-  fi
-
-  if grep -q "cap_drop" "${COMPOSE_FILE}"; then
-    pass "capabilities dropped"
-  else
-    fail "capabilities not dropped"
-  fi
-else
-  fail "docker-compose.yml not created"
 fi
 
 section "Validating auto-update setup"
@@ -358,6 +398,34 @@ if [[ -f /etc/logrotate.d/openclaw-update ]]; then
   pass "logrotate config created"
 else
   fail "logrotate config not created"
+fi
+
+section "Validating channel env var pre-configuration"
+
+if echo "${SETUP_OUTPUT}" | grep -q "Using channel from OPENCLAW_CHANNEL env var"; then
+  pass "OPENCLAW_CHANNEL env var was recognized"
+else
+  fail "OPENCLAW_CHANNEL env var not recognized in setup output"
+fi
+
+if echo "${SETUP_OUTPUT}" | grep -q "OPENCLAW_SKIP_TAILSCALE_AUTH is set"; then
+  pass "OPENCLAW_SKIP_TAILSCALE_AUTH env var was recognized"
+else
+  fail "OPENCLAW_SKIP_TAILSCALE_AUTH env var not recognized in setup output"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+ch = cfg.get('channels', {})
+assert 'telegram' in ch, 'telegram channel missing'
+assert 'discord' not in ch, 'unexpected discord channel'
+assert 'whatsapp' not in ch, 'unexpected whatsapp channel'
+assert 'slack' not in ch, 'unexpected slack channel'
+" 2>/dev/null; then
+  pass "only the selected channel (telegram) was written to config"
+else
+  fail "unexpected channels in config"
 fi
 
 section "Validating fail2ban"

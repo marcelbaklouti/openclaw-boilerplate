@@ -5,22 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v2.0.0)
 
 ### Added
 
-- Multi-provider AI model selection during setup: Anthropic Claude, MiniMax M2.5, GLM-5, or custom OpenAI-compatible endpoints. MiniMax M2.5 and GLM-5 are open-weight (MIT) and 10-60x cheaper than proprietary alternatives.
+- Multi-provider AI model selection during setup: Anthropic Claude, MiniMax M2.5, GLM-5, or custom OpenAI-compatible endpoints
 - API key stored in `~/.openclaw/.env` (600 permissions) separate from runtime config
-- `test/Dockerfile.test` and `test/test-setup.sh`: Docker-based smoke test that runs `setup.sh` in a simulated Ubuntu VPS and validates user creation, SSH hardening, config generation, file permissions, cron setup, and more - no real VPS needed
+- `test/Dockerfile.test` and `test/test-setup.sh`: Docker-based smoke test for setup.sh
 - `test.yml` workflow: runs the smoke test on every push and PR to `main`
-- Release workflow now verifies all required CI workflows (Lint, Security, Test) passed before running release-please
+- Release workflow verifies all required CI workflows passed before running release-please
+- Multi-channel support: Telegram, Discord, WhatsApp, Slack with interactive selection during setup
+- Tailscale access automation: `tailscale up` and `tailscale serve` integrated into setup flow
+- `openclaw onboard` wizard integration for OAuth channels (WhatsApp, Slack)
+- Node.js 22 LTS installation via NodeSource as part of setup (OpenClaw prerequisite)
+- `openclaw-restore.sh`: interactive backup restore with integrity validation and pre-restore snapshots
+- Daily npm security update cron (`/etc/cron.d/openclaw-npm-security`, 02:00)
+- `gateway.mode: local` in generated config per docs hardened baseline
+- `gateway.auth.allowTailscale: true` for Tailscale Serve identity-header auth
+- `tools.fs.workspaceOnly: true` and `tools.elevated.enabled: false` security baseline
+- `session.reset` config for daily automatic context resets (04:00, 120min idle)
+- Group chat mention gating (`requireMention: true`) on all channels
+- Control UI availability note in post-setup output (works without any channel)
+- `openclaw configure`, `openclaw config set`, `openclaw doctor --fix` mentioned in post-setup help
+
+### Changed
+
+- **Architecture**: replaced `git clone` + custom `docker-compose.yml` + custom `.env` with official OpenClaw installer (`https://openclaw.ai/install.sh`) + `openclaw onboard --install-daemon`. The boilerplate now wraps official tooling with server hardening.
+- `dmPolicy` changed from `allowlist` to `pairing` for all channels (docs-recommended default). Pre-seeded allowlist still applies for configured user IDs.
+- `sandbox.mode` changed from `all` to `off` (sandbox image not built during setup). Instructions to enable post-install included.
+- `openclaw-update.sh` now uses `npm update -g openclaw@latest` + `systemctl restart` instead of `git pull` + `docker compose build`
+- `openclaw doctor` now runs with `--fix` flag for auto-repair
+- Checksum fetches are skipped for tools that are already installed
+- Security audit and onboard wizard now call `openclaw` directly instead of via `docker exec`
 
 ### Fixed
 
 - `setup.sh`: remove invalid `--permanent` flag from `firewall-cmd --set-default-zone` which broke setup on all RHEL/Fedora systems
-- `setup.sh`: prepend `tg:` prefix to Telegram user ID in generated `openclaw.json` to match the format documented in `openclaw.json.example`
-- `openclaw-update.sh`: remove `npm install -g openclaw@latest` call that always failed because npm is not installed on the host (container rebuild already picks up the latest code)
-- `release.yml`: gate releases on all required workflows passing, not just the one that triggered the `workflow_run` event
+- `setup.sh`: prepend `tg:` prefix to Telegram user ID in generated `openclaw.json`
+- Discord config: changed `botToken` to `token` (correct field name per docs configuration reference)
+- `release.yml`: gate releases on all required workflows passing
 
 ## [1.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v1.0.0) (2026-02-22)
 
