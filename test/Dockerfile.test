@@ -15,7 +15,7 @@ ENV container=docker
 
 # Install systemd and basic init requirements
 RUN apt-get update -qq && \
-    apt-get install -y -qq systemd systemd-sysv dbus openssh-server sudo && \
+    apt-get install -y -qq --no-install-recommends systemd systemd-sysv dbus openssh-server sudo && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     # Remove unnecessary systemd units that break in containers
@@ -42,6 +42,7 @@ RUN ssh-keygen -t ed25519 -f /root/.ssh/id_test -N "" -q && \
 
 WORKDIR /opt/openclaw-boilerplate
 
-# Use systemd as init, then run the test script after boot
+USER root
+
 STOPSIGNAL SIGRTMIN+3
 CMD ["/bin/bash", "-c", "/opt/openclaw-boilerplate/test/test-setup.sh"]

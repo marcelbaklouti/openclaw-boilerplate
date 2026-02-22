@@ -131,7 +131,6 @@ export OPENCLAW_SKIP_TAILSCALE_AUTH=1
 #   Line 4: Telegram user ID (blank = configure later)
 echo "Running setup.sh..."
 SETUP_OUTPUT=$(printf '1\n\n\n\n' | bash /opt/openclaw-boilerplate/setup.sh 2>&1) || true
-SETUP_EXIT=$?
 
 echo ""
 echo "--- setup.sh output (last 30 lines) ---"
@@ -198,9 +197,7 @@ else
 fi
 
 # Check sshd hardening
-SSHD_HARDENED=false
 if [[ -f /etc/ssh/sshd_config.d/99-openclaw-hardening.conf ]]; then
-  SSHD_HARDENED=true
   pass "sshd drop-in config created"
 
   if grep -q "PermitRootLogin no" /etc/ssh/sshd_config.d/99-openclaw-hardening.conf; then
