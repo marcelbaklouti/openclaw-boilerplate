@@ -7,6 +7,7 @@ updates:
       day: "monday"
     commit-message:
       prefix: "ci"
+      include: "scope"
     labels:
       - "dependencies"
       - "ci"
