@@ -49,14 +49,14 @@ Each step is skipped automatically if already done.
 11. **Install OpenClaw** -- Via the official installer script (`https://openclaw.ai/install.sh`), verified against pinned checksum.
 12. **Create data directories** -- `/home/openclaw/.openclaw/workspace` owned by the openclaw user. Backup dir at `/home/openclaw/backups` owned by root (700).
 13. **Select AI provider** -- Interactive menu to choose Anthropic Claude, MiniMax M2.5, GLM-5, or a custom OpenAI-compatible endpoint. API key stored in `~/.openclaw/.env` with `600` permissions.
-14. **Select messaging channel** -- Choose Telegram, Discord, WhatsApp, Slack, or none. Telegram and Discord credentials are collected inline; WhatsApp and Slack trigger the `openclaw onboard` wizard after the daemon starts.
+14. **Select messaging channel** -- Choose Telegram, Discord, WhatsApp, Slack, or none. Telegram and Discord credentials are collected inline; WhatsApp and Slack trigger the `openclaw channels login` wizard after the daemon starts. Additional channels (Signal, Microsoft Teams, Matrix, Mattermost, IRC, and more) can be added after install via plugins -- see the [channel docs](https://docs.openclaw.ai/channels).
 15. **Write `openclaw.json`** -- Hardened config with: `gateway.mode: local`, loopback bind, token + Tailscale auth, `dmPolicy: pairing` with pre-seeded allowlist, `requireMention` group gating, `tools.fs.workspaceOnly`, `tools.elevated.enabled: false`, `sandbox.mode: off` (enable post-install), daily session resets, mDNS minimal, full sensitive data redaction.
 16. **Set up auto-updates** -- Installs `openclaw-update.sh` to `/usr/local/bin` (weekly, Sundays 03:00). Adds daily npm security update cron (02:00). Configures logrotate (weekly, 12-week retention).
 17. **Start OpenClaw daemon** -- Runs `openclaw onboard --install-daemon` to install as a systemd service.
 18. **Verify gateway binding** -- Confirms the gateway is listening on `127.0.0.1:18789`, not `0.0.0.0`.
 19. **Run security audit** -- Runs `openclaw doctor --fix` and `openclaw security audit --deep` automatically.
 20. **Configure Tailscale access** -- Optionally runs `tailscale up` and `tailscale serve` to expose the Control UI with TLS via your Tailscale network.
-21. **Run onboard wizard** -- For OAuth-based channels (WhatsApp, Slack), runs `openclaw onboard --channel <channel>` to complete authentication.
+21. **Run onboard wizard** -- For OAuth-based channels (WhatsApp, Slack), runs `openclaw channels login --channel <channel>` to complete authentication.
 
 ---
 
@@ -105,6 +105,9 @@ nano /home/openclaw/.openclaw/openclaw.json
 ```bash
 openclaw configure
 openclaw config set channels.telegram.enabled true
+openclaw channels login --channel whatsapp   # OAuth channels (WhatsApp, Slack, Teams, etc.)
+openclaw channels list                       # show all configured channels
+openclaw channels status                     # check runtime status
 openclaw doctor --fix
 ```
 
@@ -247,7 +250,7 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 | SSH              | Key-only, no root login, no password/keyboard-interactive auth, no forwarding, idle timeout 10min, `AllowUsers openclaw`                                           |
 | Secrets          | Generated fresh per install, `600` permissions, root-owned backups, `umask 077` in all scripts                                                                     |
 | Disk             | Provider-level encryption recommended at provisioning                                                                                                              |
-| Channels         | Telegram, Discord, WhatsApp, Slack supported. OAuth channels use `openclaw onboard` wizard.                                                                        |
+| Channels         | Telegram, Discord, WhatsApp, Slack supported out of the box. Signal, Teams, Matrix, Mattermost, IRC, and 15+ others available as plugins. OAuth channels use `openclaw channels login`.                                                                        |
 | Inbound messages | `dmPolicy: pairing` -- unknown senders get a one-time approval code. Pre-seeded allowlist for configured user IDs.                                                 |
 | Group chats      | `requireMention: true` on all channels -- bot only responds when @mentioned in groups                                                                              |
 | Sessions         | `dmScope: per-channel-peer` -- no context leakage between senders. Daily auto-reset after 120min idle.                                                             |
