@@ -985,32 +985,32 @@ offer_onboard_wizard() {
   print_step "Running OpenClaw onboard wizard for ${CHANNEL}"
 
   if [[ -n "${OPENCLAW_SKIP_ONBOARD:-}" ]]; then
-    echo "OPENCLAW_SKIP_ONBOARD is set, skipping onboard wizard."
+    echo "OPENCLAW_SKIP_ONBOARD is set, skipping channel login."
     echo "Run manually later:"
-    echo "  openclaw onboard --channel ${CHANNEL}"
+    echo "  openclaw channels login --channel ${CHANNEL}"
     return
   fi
 
   echo ""
-  echo "${CHANNEL} requires OAuth authentication that the onboard wizard handles."
-  echo "The wizard will open a URL you need to visit to authorize access."
+  echo "${CHANNEL} requires OAuth authentication."
+  echo "The login wizard will open a URL you need to visit to authorize access."
   echo ""
 
   local run_choice
-  read -r -p "Run the onboard wizard now? [Y/n]: " run_choice
+  read -r -p "Run the channel login wizard now? [Y/n]: " run_choice
   run_choice="${run_choice:-Y}"
 
   if [[ "${run_choice}" =~ ^[Yy] ]]; then
     echo ""
-    sudo -u "${OPENCLAW_USER}" openclaw onboard --channel "${CHANNEL}" || {
+    sudo -u "${OPENCLAW_USER}" openclaw channels login --channel "${CHANNEL}" || {
         echo ""
-        echo "Onboard wizard exited with an error." >&2
+        echo "Channel login exited with an error." >&2
         echo "Run manually later:" >&2
-        echo "  openclaw onboard --channel ${CHANNEL}" >&2
+        echo "  openclaw channels login --channel ${CHANNEL}" >&2
       }
   else
-    echo "Skipped. Run the onboard wizard later:"
-    echo "  openclaw onboard --channel ${CHANNEL}"
+    echo "Skipped. Run the channel login later:"
+    echo "  openclaw channels login --channel ${CHANNEL}"
   fi
 }
 
@@ -1068,14 +1068,14 @@ print_next_steps() {
       if [[ "${NEEDS_ONBOARD_WIZARD}" == "true" ]]; then
         has_remaining=true
         echo "Complete ${CHANNEL} OAuth setup:"
-        echo "  openclaw onboard --channel ${CHANNEL}"
+        echo "  openclaw channels login --channel ${CHANNEL}"
         echo ""
       fi
       ;;
     none)
       has_remaining=true
       echo "Configure a messaging channel:"
-      echo "  openclaw onboard"
+      echo "  openclaw channels login --channel <channel>"
       echo "  (or edit ${OPENCLAW_DATA_DIR}/openclaw.json manually)"
       echo ""
       ;;
@@ -1092,9 +1092,12 @@ print_next_steps() {
   fi
 
   echo "Useful commands:"
-  echo "  openclaw configure          - interactive configuration editor"
-  echo "  openclaw config set <k> <v> - set a config value"
-  echo "  openclaw doctor --fix       - diagnose and auto-repair issues"
+  echo "  openclaw configure                        - interactive configuration editor"
+  echo "  openclaw config set <k> <v>               - set a config value"
+  echo "  openclaw channels login --channel <name>  - authenticate an OAuth channel"
+  echo "  openclaw channels list                    - show all configured channels"
+  echo "  openclaw channels status                  - check channel runtime status"
+  echo "  openclaw doctor --fix                     - diagnose and auto-repair issues"
   echo ""
   echo "Auto-updates: every Sunday at 03:00 via /etc/cron.d/openclaw-update"
   echo "Update logs:  /var/log/openclaw-update.log (rotated weekly, kept 12 weeks)"
