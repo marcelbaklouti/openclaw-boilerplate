@@ -45,7 +45,7 @@ Each step is skipped automatically if already done.
 7. **Enable fail2ban** -- Started and enabled on boot.
 8. **Install Tailscale** -- Verified against pinned checksum before execution.
 9. **Install Docker** -- Verified against pinned checksum. Adds `openclaw` to the docker group (needed for sandbox).
-10. **Install Node.js 22 LTS** -- Via NodeSource repository. Included in OS auto-updates for security patches.
+10. **Install Node.js 22 LTS** -- Via NodeSource repository, verified against pinned checksum before execution. Included in OS auto-updates for security patches.
 11. **Install OpenClaw** -- Via the official installer script (`https://openclaw.ai/install.sh`), verified against pinned checksum.
 12. **Create data directories** -- `/home/openclaw/.openclaw/workspace` owned by the openclaw user. Backup dir at `/home/openclaw/backups` owned by root (700).
 13. **Select AI provider** -- Interactive menu to choose Anthropic Claude, MiniMax M2.5, GLM-5, or a custom OpenAI-compatible endpoint. API key stored in `~/.openclaw/.env` with `600` permissions.
@@ -243,11 +243,11 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 
 | Area             | What's done                                                                                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Supply chain     | Install scripts checksummed before execution, mismatch aborts. CI actions pinned to SHA.                                                                           |
+| Supply chain     | All install scripts (Docker, Tailscale, Node.js, OpenClaw) consistency-verified before execution: each script is downloaded twice and both hashes compared — mismatch aborts. CI actions pinned to immutable SHAs.                                            |
 | CI scanning      | TruffleHog + Gitleaks secret scanning, Trivy config/filesystem scanning, Harden-Runner network monitoring                                                          |
 | Network          | Gateway bound to `127.0.0.1` only -- never public. `gateway.mode: local` enforced.                                                                                 |
 | Remote access    | Tailscale setup automated during install -- no open ports beyond SSH. `allowTailscale: true` enables identity-header auth.                                         |
-| SSH              | Key-only, no root login, no password/keyboard-interactive auth, no forwarding, idle timeout 10min, `AllowUsers openclaw`                                           |
+| SSH              | Key-only, no root login, no password/keyboard-interactive/host-based auth, no forwarding, idle timeout 10min, `AllowUsers openclaw`. Config tested with `sshd -t` before daemon restart; rolls back on failure.                                              |
 | Secrets          | Generated fresh per install, `600` permissions, root-owned backups, `umask 077` in all scripts                                                                     |
 | Disk             | Provider-level encryption recommended at provisioning                                                                                                              |
 | Channels         | Telegram, Discord, WhatsApp, Slack supported out of the box. Signal, Teams, Matrix, Mattermost, IRC, and 15+ others available as plugins. OAuth channels use `openclaw channels login`.                                                                        |

@@ -13,6 +13,8 @@ NEEDS_ONBOARD_WIZARD=false
 DOCKER_INSTALL_SHA256=""
 TAILSCALE_INSTALL_SHA256=""
 OPENCLAW_INSTALL_SHA256=""
+NODESOURCE_INSTALL_URL=""
+NODESOURCE_INSTALL_SHA256=""
 
 print_step() {
   echo ""
@@ -166,6 +168,23 @@ harden_sshd() {
   print_step "Hardening SSH configuration"
   local sshd_config="/etc/ssh/sshd_config"
 
+  # Detect container / CI environments where sshd -t is structurally unreliable
+  # (missing dbus, cgroup restrictions, no running init, etc.).
+  # On real servers the test MUST pass; in containers we validate file contents
+  # in the smoke-test instead.
+  local skip_daemon_test=false
+  if [[ -f /.dockerenv ]] || [[ "${OPENCLAW_SKIP_SSHD_TEST:-0}" == "1" ]]; then
+    skip_daemon_test=true
+    echo "Note: sshd -t validation skipped (container environment detected)."
+  fi
+
+  # sshd -t requires host keys to exist. Generate any missing ones now so the
+  # config test works even in freshly provisioned VMs that have not yet started
+  # the SSH daemon.
+  if [[ "${skip_daemon_test}" == "false" ]] && ! ls /etc/ssh/ssh_host_*_key &>/dev/null 2>&1; then
+    ssh-keygen -A &>/dev/null
+  fi
+
   if [[ -d /etc/ssh/sshd_config.d ]]; then
     local sshd_drop_in="/etc/ssh/sshd_config.d/99-openclaw-hardening.conf"
     cat > "${sshd_drop_in}" <<EOF
@@ -173,6 +192,7 @@ PermitRootLogin no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 ChallengeResponseAuthentication no
+HostbasedAuthentication no
 PermitEmptyPasswords no
 X11Forwarding no
 AllowTcpForwarding no
@@ -188,12 +208,28 @@ AuthorizedKeysFile .ssh/authorized_keys
 Banner none
 EOF
     chmod 600 "${sshd_drop_in}"
+
+    if [[ "${skip_daemon_test}" == "false" ]]; then
+      local sshd_err
+      sshd_err="$(sshd -t 2>&1)" || {
+        echo "ERROR: sshd configuration test failed after writing drop-in. Removing drop-in and aborting." >&2
+        echo "${sshd_err}" >&2
+        rm -f "${sshd_drop_in}"
+        exit 1
+      }
+    fi
   else
+    # Backup the original config so we can roll back if validation fails
+    local sshd_backup="${sshd_config}.pre-openclaw.bak"
+    cp "${sshd_config}" "${sshd_backup}"
+    chmod 600 "${sshd_backup}"
+
     local hardening_lines=(
       "PermitRootLogin no"
       "PasswordAuthentication no"
       "KbdInteractiveAuthentication no"
       "ChallengeResponseAuthentication no"
+      "HostbasedAuthentication no"
       "PermitEmptyPasswords no"
       "X11Forwarding no"
       "AllowTcpForwarding no"
@@ -217,6 +253,16 @@ EOF
         echo "${directive}" >> "${sshd_config}"
       fi
     done
+
+    if [[ "${skip_daemon_test}" == "false" ]]; then
+      local sshd_err
+      sshd_err="$(sshd -t 2>&1)" || {
+        echo "ERROR: sshd configuration test failed after hardening. Restoring backup and aborting." >&2
+        echo "${sshd_err}" >&2
+        cp "${sshd_backup}" "${sshd_config}"
+        exit 1
+      }
+    fi
   fi
 
   systemctl restart sshd 2>/dev/null || systemctl restart ssh
@@ -256,6 +302,32 @@ fetch_and_pin_checksums() {
     echo "Downloading OpenClaw install script to compute checksum..."
     OPENCLAW_INSTALL_SHA256="$(fetch_live_checksum "https://openclaw.ai/install.sh")"
     echo "OpenClaw SHA256: ${OPENCLAW_INSTALL_SHA256}"
+  fi
+
+  local needs_node=false
+  if ! command -v node &>/dev/null; then
+    needs_node=true
+  else
+    local node_major
+    node_major="$(node --version 2>/dev/null | tr -d 'v' | cut -d. -f1)"
+    if [[ "${node_major}" -lt 22 ]]; then
+      needs_node=true
+    fi
+  fi
+
+  if [[ "${needs_node}" == "true" ]]; then
+    local pkg_manager
+    pkg_manager="$(detect_package_manager)"
+    case "${pkg_manager}" in
+      apt)   NODESOURCE_INSTALL_URL="https://deb.nodesource.com/setup_22.x" ;;
+      dnf | yum) NODESOURCE_INSTALL_URL="https://rpm.nodesource.com/setup_22.x" ;;
+      *) ;;
+    esac
+    if [[ -n "${NODESOURCE_INSTALL_URL}" ]]; then
+      echo "Downloading NodeSource setup script to compute checksum..."
+      NODESOURCE_INSTALL_SHA256="$(fetch_live_checksum "${NODESOURCE_INSTALL_URL}")"
+      echo "NodeSource SHA256: ${NODESOURCE_INSTALL_SHA256}"
+    fi
   fi
 
   echo "Checksums pinned. Each script will be re-downloaded and verified before execution."
@@ -335,13 +407,22 @@ install_node() {
   pkg_manager="$(detect_package_manager)"
 
   case "${pkg_manager}" in
-    apt)
-      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      apt-get install -y -qq nodejs
-      ;;
-    dnf | yum)
-      curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-      "${pkg_manager}" install -y -q nodejs
+    apt | dnf | yum)
+      if [[ -z "${NODESOURCE_INSTALL_URL}" ]] || [[ -z "${NODESOURCE_INSTALL_SHA256}" ]]; then
+        echo "NodeSource checksum not available - run fetch_and_pin_checksums first." >&2
+        exit 1
+      fi
+      local tmp_script
+      tmp_script="$(mktemp /tmp/nodesource-setup.XXXXXX.sh)"
+      trap 'rm -f "${tmp_script}"' RETURN
+      download_and_verify "${NODESOURCE_INSTALL_URL}" "${NODESOURCE_INSTALL_SHA256}" "${tmp_script}"
+      chmod 700 "${tmp_script}"
+      bash "${tmp_script}"
+      if [[ "${pkg_manager}" == "apt" ]]; then
+        apt-get install -y -qq nodejs
+      else
+        "${pkg_manager}" install -y -q nodejs
+      fi
       ;;
     *)
       echo "Install Node.js 22+ manually: https://nodejs.org/" >&2
@@ -982,7 +1063,7 @@ offer_onboard_wizard() {
     return
   fi
 
-  print_step "Running OpenClaw onboard wizard for ${CHANNEL}"
+  print_step "Logging in to ${CHANNEL} channel"
 
   if [[ -n "${OPENCLAW_SKIP_ONBOARD:-}" ]]; then
     echo "OPENCLAW_SKIP_ONBOARD is set, skipping channel login."
