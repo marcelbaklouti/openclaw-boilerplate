@@ -168,6 +168,12 @@ harden_sshd() {
   print_step "Hardening SSH configuration"
   local sshd_config="/etc/ssh/sshd_config"
 
+  # sshd -t requires host keys to exist. Generate any missing ones now so the
+  # config test works even in freshly provisioned containers or images.
+  if ! ls /etc/ssh/ssh_host_*_key &>/dev/null 2>&1; then
+    ssh-keygen -A &>/dev/null
+  fi
+
   if [[ -d /etc/ssh/sshd_config.d ]]; then
     local sshd_drop_in="/etc/ssh/sshd_config.d/99-openclaw-hardening.conf"
     cat > "${sshd_drop_in}" <<EOF
