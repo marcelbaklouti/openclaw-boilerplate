@@ -6,6 +6,22 @@ Uses the official OpenClaw installer and `openclaw onboard` wizard -- this boile
 
 ---
 
+## Deployment Guides
+
+New to self-hosting? These step-by-step guides walk you through every platform in plain language — no Linux experience required.
+
+| Platform | Guide | Notes |
+|---|---|---|
+| **VPS** (DigitalOcean, Hetzner, Vultr, Linode, OVH...) | [docs/quickstart/vps.md](docs/quickstart/vps.md) | Easiest starting point, ~$5/month |
+| **AWS EC2** | [docs/quickstart/aws.md](docs/quickstart/aws.md) | Amazon cloud, larger ecosystem |
+| **Own server at home** | [docs/quickstart/home-server.md](docs/quickstart/home-server.md) | Old PC or mini PC, runs 24/7 on your hardware |
+| **Raspberry Pi** | [docs/quickstart/raspberry-pi.md](docs/quickstart/raspberry-pi.md) | Tiny, silent, low-power home server |
+| **Docker** | [docs/quickstart/docker.md](docs/quickstart/docker.md) | Containerised deploy with docker-compose |
+| **Mac** (Lume / UTM / OrbStack) | [docs/quickstart/mac.md](docs/quickstart/mac.md) | Run a Linux VM on your Mac |
+| **Windows** (WSL2) | [docs/quickstart/windows.md](docs/quickstart/windows.md) | Linux inside Windows |
+
+---
+
 ## Compatibility
 
 | OS family       | Tested distros                   | Firewall used |
