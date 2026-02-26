@@ -217,6 +217,12 @@ if [[ -f /etc/ssh/sshd_config.d/99-openclaw-hardening.conf ]]; then
   else
     fail "AllowUsers not restricted"
   fi
+
+  if grep -q "HostbasedAuthentication no" /etc/ssh/sshd_config.d/99-openclaw-hardening.conf; then
+    pass "HostbasedAuthentication disabled"
+  else
+    fail "HostbasedAuthentication not disabled in drop-in"
+  fi
 else
   # Fallback: check main sshd_config
   if grep -q "PermitRootLogin no" /etc/ssh/sshd_config; then
