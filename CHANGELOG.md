@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/compare/v1.0.0...v2.0.0) (2026-03-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* setup.sh no longer clones the OpenClaw repo or generates docker-compose.yml and .env. It now uses the official installer (openclaw.ai/install.sh) and openclaw onboard --install-daemon to run the gateway as a systemd service. Existing deployments using the docker-compose approach must migrate manually.
+
+### Added
+
+* add multi-provider AI model selection and Docker smoke test ([863d8be](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/863d8bee8ddef51c2c114168974f343099536776))
+* switch to official installer, add Node.js prereq, hardened config, backup/restore ([7d7dd5a](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/7d7dd5aa12a4a29dc5d812df312cb13ecf58851f))
+
+
+### Fixed
+
+* add .trivyignore to suppress DS-0002 for test Dockerfile ([1acf826](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/1acf82623d9be7689f21ecff265ce87c99ea4ecc))
+* correct firewalld command, remove broken npm step, fix tg prefix, gate releases on all CI ([6c4ce42](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/6c4ce42b10ec470fe2d49db13f10b7be73ab997b))
+* resolve CI failures from ShellCheck and Trivy ([b003741](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/b003741d74d7dd57d1085d4308274c9374470db2))
+
+
+### Security
+
+* close four hardening gaps found in audit ([#7](https://github.com/marcelbaklouti/openclaw-boilerplate/issues/7)) ([c499bbc](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/c499bbc961c92622f718e5c07f5d58057f7091ba))
+
 ## [2.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v2.0.0)
 
 ### Added
@@ -88,4 +112,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Immutable container filesystem prevents persistent malware
 - Idle SSH sessions killed after 10 minutes
 - Concurrent update prevention via flock avoids state corruption
-
