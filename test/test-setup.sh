@@ -289,12 +289,35 @@ if python3 -c "
 import json
 cfg = json.load(open('${CONFIG_FILE}'))
 tools = cfg.get('tools', {})
+assert tools.get('profile') == 'full', 'tools.profile not full'
 assert tools.get('fs', {}).get('workspaceOnly') == True, 'fs.workspaceOnly not true'
 assert tools.get('elevated', {}).get('enabled') == False, 'elevated.enabled not false'
 " 2>/dev/null; then
-  pass "tools security baseline configured"
+  pass "tools security baseline configured (profile=full, workspaceOnly, no elevated)"
 else
   fail "tools security baseline not configured"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+plugins = cfg.get('plugins', {})
+assert plugins.get('security', {}).get('autoLoadWorkspace') == False, 'autoLoadWorkspace not false'
+" 2>/dev/null; then
+  pass "plugins.security.autoLoadWorkspace set to false"
+else
+  fail "plugins.security.autoLoadWorkspace not set to false"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+agents = cfg.get('agents', {})
+assert agents.get('defaults', {}).get('thinking') == 'adaptive', 'thinking not adaptive'
+" 2>/dev/null; then
+  pass "agents.defaults.thinking set to adaptive"
+else
+  fail "agents.defaults.thinking not set to adaptive"
 fi
 
 if python3 -c "
@@ -374,8 +397,9 @@ assert 'botToken' in tg, 'missing botToken'
 assert 'allowFrom' in tg, 'missing allowFrom'
 assert tg.get('dmPolicy') == 'pairing', 'wrong dmPolicy'
 assert tg.get('groups', {}).get('*', {}).get('requireMention') == True, 'missing groups mention gating'
+assert tg.get('persistBindings') == True, 'missing persistBindings'
 " 2>/dev/null; then
-    pass "telegram channel structure is valid"
+    pass "telegram channel structure is valid (including persistBindings)"
   else
     fail "telegram channel structure is invalid"
   fi

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v3.0.0)
+
+### Added
+
+- **OpenAI GPT-5.4 provider**: Added as a first-class provider option in the setup wizard (option 2), alongside Claude Opus 4.6, MiniMax M2.5, GLM-5, and custom endpoints
+- **Signal channel**: Added Signal as a built-in channel option in setup (OAuth-based, uses `openclaw channels login`)
+- **`tools.profile: full`**: Explicitly set in generated config to prevent the v2026.3.2 bug that defaulted `tools.profile` to `messaging` (which disabled exec/file tools)
+- **`plugins.security.autoLoadWorkspace: false`**: Disables implicit workspace plugin auto-load so cloned repositories cannot execute plugin code without explicit trust (v2026.3.13 security hardening)
+- **`agents.defaults.thinking: adaptive`**: Enables dynamic cognitive effort scaling based on task complexity (v2026.3.1 default for Claude 4.6 models)
+- **`persistBindings: true`**: Added to Telegram and Discord channel configs so channel/topic bindings survive gateway restarts (v2026.3.7 durable binding storage)
+- **`OPENCLAW_TZ`**: Docker timezone override in `docker-compose.yml` and `.env.example` to pin gateway containers to a chosen IANA timezone
+- **Post-update security audit**: `openclaw-update.sh` now runs `openclaw doctor --fix` and `openclaw security audit --deep` after every weekly update
+- **Version logging**: `openclaw-update.sh` now logs the OpenClaw version before and after each update for audit trail
+- **New test assertions**: Smoke test validates `tools.profile`, `plugins.security.autoLoadWorkspace`, `agents.defaults.thinking`, and `persistBindings` in generated config
+
+### Changed
+
+- AI provider menu expanded from 4 to 5 options (Anthropic, OpenAI, MiniMax, Zhipu, Custom)
+- Channel selection menu expanded from 5 to 6 options (added Signal)
+- Security model documentation updated with plugin security, persistent bindings, tool profile, and Cisco research citation
+
+### Security
+
+- Workspace plugin auto-load disabled by default -- prevents supply chain attacks via cloned repos containing malicious workspace plugins
+- Explicit `tools.profile: full` prevents silent tool restriction from the v2026.3.2 `messaging` default bug
+- Post-update `openclaw security audit --deep` catches regressions introduced by upstream updates
+- Added warning about third-party skill risks citing Cisco's AI security research findings
+
 ## [2.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v2.0.0)
 
 ### Added

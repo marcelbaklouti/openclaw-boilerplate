@@ -486,18 +486,19 @@ select_ai_provider() {
   echo "Choose an AI model provider for the agent:"
   echo ""
   echo "  1) Anthropic Claude (claude-opus-4-6)  — commercial API key required"
-  echo "  2) MiniMax M2.5        — much cheaper (\$0.30/\$1.20 per 1M tokens), MIT license"
-  echo "  3) GLM-5 (Zhipu AI)   — very affordable (\$0.30/\$2.55 per 1M tokens), MIT license"
-  echo "  4) Custom              — any OpenAI-compatible API endpoint"
+  echo "  2) OpenAI GPT-5.4     — commercial API key required"
+  echo "  3) MiniMax M2.5        — much cheaper (\$0.30/\$1.20 per 1M tokens), MIT license"
+  echo "  4) GLM-5 (Zhipu AI)   — very affordable (\$0.30/\$2.55 per 1M tokens), MIT license"
+  echo "  5) Custom              — any OpenAI-compatible API endpoint"
   echo ""
-  echo "Note: Options 2 and 3 are open-weight models available via multiple API"
+  echo "Note: Options 3 and 4 are open-weight models available via multiple API"
   echo "providers (or self-hosted). They score competitively on agentic benchmarks"
   echo "and cost a fraction of proprietary alternatives."
   echo ""
 
   local choice
   while true; do
-    read -r -p "Enter choice [1-4] (default: 1): " choice
+    read -r -p "Enter choice [1-5] (default: 1): " choice
     choice="${choice:-1}"
     case "${choice}" in
       1)
@@ -510,6 +511,15 @@ select_ai_provider() {
         break
         ;;
       2)
+        AI_PROVIDER="openai"
+        AI_MODEL="openai/gpt-5.4"
+        AI_API_KEY_ENV="OPENAI_API_KEY"
+        echo ""
+        echo "Enter your OpenAI API key (leave blank to configure later):"
+        read -r -s ai_api_key
+        break
+        ;;
+      3)
         AI_PROVIDER="minimax"
         AI_MODEL="minimax/MiniMax-M2.5"
         AI_API_KEY_ENV="MINIMAX_API_KEY"
@@ -518,7 +528,7 @@ select_ai_provider() {
         read -r -s ai_api_key
         break
         ;;
-      3)
+      4)
         AI_PROVIDER="zhipu"
         AI_MODEL="zhipu/glm-5"
         AI_API_KEY_ENV="ZHIPU_API_KEY"
@@ -527,10 +537,10 @@ select_ai_provider() {
         read -r -s ai_api_key
         break
         ;;
-      4)
+      5)
         AI_PROVIDER="custom"
         echo ""
-        echo "Enter the model identifier (e.g. openai/gpt-4o, deepseek/deepseek-v3.2):"
+        echo "Enter the model identifier (e.g. deepseek/deepseek-v3.2):"
         read -r AI_MODEL
         AI_API_KEY_ENV="OPENAI_API_KEY"
         echo ""
@@ -542,7 +552,7 @@ select_ai_provider() {
         break
         ;;
       *)
-        echo "Invalid choice. Enter 1, 2, 3, or 4."
+        echo "Invalid choice. Enter 1, 2, 3, 4, or 5."
         ;;
     esac
   done
@@ -578,10 +588,10 @@ select_channel() {
     echo "Using channel from OPENCLAW_CHANNEL env var: ${CHANNEL}"
     case "${CHANNEL}" in
       telegram | discord) ;;
-      whatsapp | slack) NEEDS_ONBOARD_WIZARD=true ;;
+      whatsapp | slack | signal) NEEDS_ONBOARD_WIZARD=true ;;
       none) ;;
       *)
-        echo "Unsupported OPENCLAW_CHANNEL value: ${CHANNEL}. Use telegram, discord, whatsapp, slack, or none." >&2
+        echo "Unsupported OPENCLAW_CHANNEL value: ${CHANNEL}. Use telegram, discord, whatsapp, slack, signal, or none." >&2
         exit 1
         ;;
     esac
@@ -595,20 +605,22 @@ select_channel() {
   echo "  2) Discord   - Bot token + user ID (configure here)"
   echo "  3) WhatsApp  - Requires OAuth (completed via onboard wizard)"
   echo "  4) Slack     - Requires OAuth (completed via onboard wizard)"
-  echo "  5) None      - Configure a channel later"
+  echo "  5) Signal    - Requires OAuth (completed via onboard wizard)"
+  echo "  6) None      - Configure a channel later"
   echo ""
 
   local choice
   while true; do
-    read -r -p "Enter choice [1-5] (default: 1): " choice
+    read -r -p "Enter choice [1-6] (default: 1): " choice
     choice="${choice:-1}"
     case "${choice}" in
       1) CHANNEL="telegram"; break ;;
       2) CHANNEL="discord"; break ;;
       3) CHANNEL="whatsapp"; NEEDS_ONBOARD_WIZARD=true; break ;;
       4) CHANNEL="slack"; NEEDS_ONBOARD_WIZARD=true; break ;;
-      5) CHANNEL="none"; break ;;
-      *) echo "Invalid choice. Enter 1, 2, 3, 4, or 5." ;;
+      5) CHANNEL="signal"; NEEDS_ONBOARD_WIZARD=true; break ;;
+      6) CHANNEL="none"; break ;;
+      *) echo "Invalid choice. Enter 1, 2, 3, 4, 5, or 6." ;;
     esac
   done
 
@@ -654,7 +666,7 @@ collect_channel_credentials() {
         read -r discord_user_id
       fi
       ;;
-    whatsapp | slack)
+    whatsapp | slack | signal)
       echo ""
       echo "${CHANNEL} requires OAuth authentication."
       echo "The onboard wizard will run after the daemon starts."
@@ -691,7 +703,8 @@ build_channel_json() {
       "botToken": "${safe_bot_token}",
       "dmPolicy": "pairing",
       "allowFrom": ["${safe_user_id}"],
-      "groups": { "*": { "requireMention": true } }
+      "groups": { "*": { "requireMention": true } },
+      "persistBindings": true
     }
 CEOF
 )"
@@ -718,7 +731,8 @@ CEOF
       "token": "${safe_bot_token}",
       "dmPolicy": "pairing",
       "allowFrom": ["${safe_user_id}"],
-      "groups": { "*": { "requireMention": true } }
+      "groups": { "*": { "requireMention": true } },
+      "persistBindings": true
     }
 CEOF
 )"
@@ -734,6 +748,13 @@ CEOF
       channel_json='    "slack": {
       "enabled": false,
       "dmPolicy": "pairing"
+    }'
+      ;;
+    signal)
+      channel_json='    "signal": {
+      "enabled": false,
+      "dmPolicy": "pairing",
+      "groups": { "*": { "requireMention": true } }
     }'
       ;;
     none)
@@ -798,6 +819,7 @@ CHEOF
       "model": {
         "primary": "${AI_MODEL}"
       },
+      "thinking": "adaptive",
       "sandbox": {
         "mode": "off",
         "scope": "agent",
@@ -806,8 +828,14 @@ CHEOF
     }
   },
   "tools": {
+    "profile": "full",
     "fs": { "workspaceOnly": true },
     "elevated": { "enabled": false }
+  },
+  "plugins": {
+    "security": {
+      "autoLoadWorkspace": false
+    }
   },
 ${channels_block}
   "session": {
@@ -906,9 +934,27 @@ prune_old_backups() {
 }
 
 update_and_restart() {
+  local old_version
+  old_version="$(openclaw --version 2>/dev/null || echo 'unknown')"
+  log "Current version before update: ${old_version}"
+
   npm update -g openclaw@latest >> "${LOG_FILE}" 2>&1
+
+  local new_version
+  new_version="$(openclaw --version 2>/dev/null || echo 'unknown')"
+  log "Version after update: ${new_version}"
+
   systemctl restart openclaw-gateway >> "${LOG_FILE}" 2>&1
   log "OpenClaw updated and gateway restarted"
+}
+
+run_post_update_audit() {
+  log "Running post-update security audit"
+  local openclaw_user="openclaw"
+  sudo -u "${openclaw_user}" openclaw doctor --fix >> "${LOG_FILE}" 2>&1 || true
+  sudo -u "${openclaw_user}" openclaw security audit --deep >> "${LOG_FILE}" 2>&1 || {
+    log "WARNING: Post-update security audit reported issues - review ${LOG_FILE}"
+  }
 }
 
 main() {
@@ -918,6 +964,7 @@ main() {
   create_backup
   prune_old_backups
   update_and_restart
+  run_post_update_audit
   log "Update complete"
 }
 
@@ -1145,7 +1192,7 @@ print_next_steps() {
         echo ""
       fi
       ;;
-    whatsapp | slack)
+    whatsapp | slack | signal)
       if [[ "${NEEDS_ONBOARD_WIZARD}" == "true" ]]; then
         has_remaining=true
         echo "Complete ${CHANNEL} OAuth setup:"
