@@ -48,9 +48,27 @@ prune_old_backups() {
 }
 
 update_and_restart() {
+  local old_version
+  old_version="$(openclaw --version 2>/dev/null || echo 'unknown')"
+  log "Current version before update: ${old_version}"
+
   npm update -g openclaw@latest >> "${LOG_FILE}" 2>&1
+
+  local new_version
+  new_version="$(openclaw --version 2>/dev/null || echo 'unknown')"
+  log "Version after update: ${new_version}"
+
   systemctl restart openclaw-gateway >> "${LOG_FILE}" 2>&1
   log "OpenClaw updated and gateway restarted"
+}
+
+run_post_update_audit() {
+  log "Running post-update security audit"
+  local openclaw_user="openclaw"
+  sudo -u "${openclaw_user}" openclaw doctor --fix >> "${LOG_FILE}" 2>&1 || true
+  sudo -u "${openclaw_user}" openclaw security audit --deep >> "${LOG_FILE}" 2>&1 || {
+    log "WARNING: Post-update security audit reported issues - review ${LOG_FILE}"
+  }
 }
 
 main() {
@@ -60,6 +78,7 @@ main() {
   create_backup
   prune_old_backups
   update_and_restart
+  run_post_update_audit
   log "Update complete"
 }
 

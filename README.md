@@ -64,9 +64,9 @@ Each step is skipped automatically if already done.
 10. **Install Node.js 22 LTS** -- Via NodeSource repository, verified against pinned checksum before execution. Included in OS auto-updates for security patches.
 11. **Install OpenClaw** -- Via the official installer script (`https://openclaw.ai/install.sh`), verified against pinned checksum.
 12. **Create data directories** -- `/home/openclaw/.openclaw/workspace` owned by the openclaw user. Backup dir at `/home/openclaw/backups` owned by root (700).
-13. **Select AI provider** -- Interactive menu to choose Anthropic Claude, MiniMax M2.5, GLM-5, or a custom OpenAI-compatible endpoint. API key stored in `~/.openclaw/.env` with `600` permissions.
-14. **Select messaging channel** -- Choose Telegram, Discord, WhatsApp, Slack, or none. Telegram and Discord credentials are collected inline; WhatsApp and Slack trigger the `openclaw channels login` wizard after the daemon starts. Additional channels (Signal, Microsoft Teams, Matrix, Mattermost, IRC, and more) can be added after install via plugins -- see the [channel docs](https://docs.openclaw.ai/channels).
-15. **Write `openclaw.json`** -- Hardened config with: `gateway.mode: local`, loopback bind, token + Tailscale auth, `dmPolicy: pairing` with pre-seeded allowlist, `requireMention` group gating, `tools.fs.workspaceOnly`, `tools.elevated.enabled: false`, `sandbox.mode: off` (enable post-install), daily session resets, mDNS minimal, full sensitive data redaction.
+13. **Select AI provider** -- Interactive menu to choose Anthropic Claude, OpenAI GPT-5.4, MiniMax M2.5, GLM-5, or a custom OpenAI-compatible endpoint. API key stored in `~/.openclaw/.env` with `600` permissions.
+14. **Select messaging channel** -- Choose Telegram, Discord, WhatsApp, Slack, Signal, or none. Telegram and Discord credentials are collected inline; WhatsApp, Slack, and Signal trigger the `openclaw channels login` wizard after the daemon starts. Additional channels (Microsoft Teams, Matrix, Mattermost, IRC, and more) can be added after install via plugins -- see the [channel docs](https://docs.openclaw.ai/channels).
+15. **Write `openclaw.json`** -- Hardened config with: `gateway.mode: local`, loopback bind, token + Tailscale auth, `dmPolicy: pairing` with pre-seeded allowlist, `requireMention` group gating, `tools.profile: full`, `tools.fs.workspaceOnly`, `tools.elevated.enabled: false`, `plugins.security.autoLoadWorkspace: false`, `agents.defaults.thinking: adaptive`, `persistBindings: true` on Telegram/Discord, `sandbox.mode: off` (enable post-install), daily session resets, mDNS minimal, full sensitive data redaction.
 16. **Set up auto-updates** -- Installs `openclaw-update.sh` to `/usr/local/bin` (weekly, Sundays 03:00). Adds daily npm security update cron (02:00). Configures logrotate (weekly, 12-week retention).
 17. **Start OpenClaw daemon** -- Runs `openclaw onboard --install-daemon` to install as a systemd service.
 18. **Verify gateway binding** -- Confirms the gateway is listening on `127.0.0.1:18789`, not `0.0.0.0`.
@@ -83,6 +83,7 @@ The setup script asks which AI provider to use. You can change providers at any 
 | Provider  | Model                       | Input / Output (per 1M tokens) | License     | Notes                                                                                            |
 | --------- | --------------------------- | ------------------------------ | ----------- | ------------------------------------------------------------------------------------------------ |
 | Anthropic | `anthropic/claude-opus-4-6` | $5.00 / $25.00                 | Proprietary | Strongest prompt injection resistance. Requires commercial API key (not a Pro/Max subscription). |
+| OpenAI    | `openai/gpt-5.4`            | Varies                         | Proprietary | Latest OpenAI flagship model. Also available as `openai/gpt-5.4-pro`.                            |
 | MiniMax   | `minimax/MiniMax-M2.5`      | $0.30 / $1.20                  | MIT         | Open weights, self-hostable. 80.2% SWE-Bench. 63x cheaper than Claude Opus.                      |
 | Zhipu AI  | `zhipu/glm-5`               | $0.30 / $2.55                  | MIT         | Open weights, self-hostable. 77.8% SWE-Bench. Available via 8+ API providers.                    |
 | Custom    | Any OpenAI-compatible       | Varies                         | Varies      | DeepSeek, Qwen, or any provider with an OpenAI-compatible API.                                   |
@@ -152,7 +153,7 @@ bash setup.sh
 | Variable                       | Purpose                                                                     |
 | ------------------------------ | --------------------------------------------------------------------------- |
 | `OPENCLAW_SSH_PUBLIC_KEY`      | SSH public key for the openclaw user                                        |
-| `OPENCLAW_CHANNEL`             | Channel to configure: `telegram`, `discord`, `whatsapp`, `slack`, or `none` |
+| `OPENCLAW_CHANNEL`             | Channel to configure: `telegram`, `discord`, `whatsapp`, `slack`, `signal`, or `none` |
 | `OPENCLAW_TELEGRAM_BOT_TOKEN`  | Telegram bot token (skips interactive prompt)                               |
 | `OPENCLAW_TELEGRAM_USER_ID`    | Telegram user ID (skips interactive prompt)                                 |
 | `OPENCLAW_DISCORD_BOT_TOKEN`   | Discord bot token (skips interactive prompt)                                |
@@ -266,18 +267,20 @@ Every job runs behind [StepSecurity Harden-Runner](https://github.com/step-secur
 | SSH              | Key-only, no root login, no password/keyboard-interactive/host-based auth, no forwarding, idle timeout 10min, `AllowUsers openclaw`. Config tested with `sshd -t` before daemon restart; rolls back on failure.                                              |
 | Secrets          | Generated fresh per install, `600` permissions, root-owned backups, `umask 077` in all scripts                                                                     |
 | Disk             | Provider-level encryption recommended at provisioning                                                                                                              |
-| Channels         | Telegram, Discord, WhatsApp, Slack supported out of the box. Signal, Teams, Matrix, Mattermost, IRC, and 15+ others available as plugins. OAuth channels use `openclaw channels login`.                                                                        |
+| Channels         | Telegram, Discord, WhatsApp, Slack, Signal supported out of the box. Teams, Matrix, Mattermost, IRC, and 15+ others available as plugins. OAuth channels use `openclaw channels login`.                                                                        |
 | Inbound messages | `dmPolicy: pairing` -- unknown senders get a one-time approval code. Pre-seeded allowlist for configured user IDs.                                                 |
 | Group chats      | `requireMention: true` on all channels -- bot only responds when @mentioned in groups                                                                              |
 | Sessions         | `dmScope: per-channel-peer` -- no context leakage between senders. Daily auto-reset after 120min idle.                                                             |
-| Tools            | `fs.workspaceOnly: true`, `elevated.enabled: false` -- restricted filesystem and no privilege escalation                                                           |
+| Tools            | `tools.profile: full` (explicit -- avoids the v2026.3.2 `messaging` default bug). `fs.workspaceOnly: true`, `elevated.enabled: false` -- restricted filesystem and no privilege escalation |
+| Plugins          | `plugins.security.autoLoadWorkspace: false` -- prevents cloned repositories from auto-executing workspace plugin code without explicit trust decision (v2026.3.13 security hardening) |
 | Logging          | `redactSensitive: tools` -- sensitive data redacted in tool outputs. Auth rate limiting (10 attempts/min, 5min lockout)                                            |
-| Model            | Configurable: Claude Opus 4.6 (default), MiniMax M2.5, GLM-5, or custom. Larger models offer stronger prompt injection resistance.                                 |
+| Model            | Configurable: Claude Opus 4.6 (default), GPT-5.4, MiniMax M2.5, GLM-5, or custom. Larger models offer stronger prompt injection resistance. `thinking: adaptive` for dynamic cognitive scaling. |
 | Sandbox          | Off by default (image not built). Enable post-install with `scripts/sandbox-setup.sh`.                                                                             |
-| Audit            | `openclaw doctor --fix` and `openclaw security audit --deep` run automatically after bootstrap                                                                     |
-| Updates          | Weekly OpenClaw update, daily npm security update, daily OS security patches via unattended-upgrades/dnf-automatic. Exclusive lock and backup before every update. |
+| Audit            | `openclaw doctor --fix` and `openclaw security audit --deep` run automatically after bootstrap and after every weekly auto-update                                  |
+| Updates          | Weekly OpenClaw update with version logging, daily npm security update, daily OS security patches via unattended-upgrades/dnf-automatic. Exclusive lock and backup before every update. |
 | Backup           | Automatic pre-update backups with 30-day retention. Restore script included.                                                                                       |
-| Skills           | Install only from trusted sources -- read `SKILL.md` before adding any                                                                                             |
+| Skills           | Install only from trusted sources -- read `SKILL.md` before adding any. Workspace plugin auto-load is disabled.                                                   |
+| Bindings         | `persistBindings: true` on Telegram/Discord -- channel and topic bindings survive gateway restarts (v2026.3.7+)                                                    |
 
 ---
 
@@ -288,4 +291,5 @@ The boilerplate hardens the infrastructure around OpenClaw. It cannot eliminate 
 - Credentials are stored unencrypted on disk at `/home/openclaw/.openclaw/openclaw.json`. Anyone with shell access as `openclaw` can read them.
 - The docker group gives `openclaw` effective root on the host. This is required for Docker to function (needed for sandbox).
 - Prompt injection via crafted messages is a real class of attack. The pairing policy, mention gating, sandbox, and Opus 4.6 model selection reduce the risk but do not eliminate it.
-- Third-party skills extend the trust boundary. Only install skills you have read and understand.
+- Third-party skills extend the trust boundary. Only install skills you have read and understand. [Cisco's research](https://www.nxcode.io/resources/news/openclaw-complete-guide-2026) found that unvetted skills can perform data exfiltration and prompt injection.
+- Workspace plugins are disabled by default (`plugins.security.autoLoadWorkspace: false`). Do not enable auto-load unless you trust every repository you clone into the workspace.
