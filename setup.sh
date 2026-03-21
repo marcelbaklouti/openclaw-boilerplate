@@ -963,8 +963,8 @@ update_and_restart() {
 run_post_update_audit() {
   log "Running post-update security audit"
   local openclaw_user="openclaw"
-  sudo -u "${openclaw_user}" openclaw doctor --fix >> "${LOG_FILE}" 2>&1 || true
-  sudo -u "${openclaw_user}" openclaw security audit --deep >> "${LOG_FILE}" 2>&1 || {
+  sudo -u "${openclaw_user}" openclaw doctor --fix 2>&1 | tee -a "${LOG_FILE}" > /dev/null || true
+  sudo -u "${openclaw_user}" openclaw security audit --deep 2>&1 | tee -a "${LOG_FILE}" > /dev/null || {
     log "WARNING: Post-update security audit reported issues - review ${LOG_FILE}"
   }
 }
