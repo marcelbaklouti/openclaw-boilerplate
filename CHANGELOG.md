@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v3.0.0)
+## [2026.3.13](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v2026.3.13)
 
 ### Added
 
@@ -24,12 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - AI provider menu expanded from 4 to 5 options (Anthropic, OpenAI, MiniMax, Zhipu, Custom)
 - Channel selection menu expanded from 5 to 6 options (added Signal)
+- Boilerplate version scheme aligned with OpenClaw upstream calendar versioning (2026.3.13)
 - Security model documentation updated with plugin security, persistent bindings, tool profile, and Cisco research citation
 
 ### Security
 
+- `tools.exec.ask: "always"` -- every shell command requires explicit user approval before execution
+- `browser.enabled: false` -- browser automation disabled by default to prevent SSRF and remote code execution risks
+- `controlUi.dangerouslyDisableDeviceAuth: false` -- device pairing explicitly enforced for Control UI
+- `session.maintenance.mode: "enforce"` with 30-day prune and 500 entry cap -- prevents unbounded disk/memory growth from long-running agents
 - Workspace plugin auto-load disabled by default -- prevents supply chain attacks via cloned repos containing malicious workspace plugins
 - Explicit `tools.profile: full` prevents silent tool restriction from the v2026.3.2 `messaging` default bug
+- `OPENCLAW_HANDSHAKE_TIMEOUT_MS` exposed in Docker config (default 10s) to prevent slow-handshake DoS
 - Post-update `openclaw security audit --deep` catches regressions introduced by upstream updates
 - Added warning about third-party skill risks citing Cisco's AI security research findings
 

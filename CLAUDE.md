@@ -6,7 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Security-focused, fully automated deployment boilerplate for [OpenClaw](https://openclaw.ai) (open-source AI agent framework). Wraps the official OpenClaw installer with server hardening, automated backups, and security update infrastructure. Not a library — this is infrastructure-as-code (shell scripts, Docker, CI).
 
-**Currently adapted to OpenClaw v2026.3.13.** When updating for new OpenClaw versions, check the upstream changelog: https://github.com/openclaw/openclaw/blob/main/CHANGELOG.md
+**Boilerplate version is aligned to OpenClaw releases: currently v2026.3.13.**
+
+When adapting to a new OpenClaw version:
+1. Read the upstream changelog: https://github.com/openclaw/openclaw/blob/main/CHANGELOG.md
+2. Check the config reference: https://docs.openclaw.ai/gateway/configuration-reference
+3. Check security docs: https://docs.openclaw.ai/gateway/security
+4. Bump `.release-please-manifest.json` to match the upstream version
+5. Update this file's version number
 
 ## Commands
 
@@ -44,6 +51,10 @@ The boilerplate has three layers:
 - `auth: "none"` was permanently removed upstream in v2026.1.29. Config always uses `auth.mode: "token"`.
 - `tools.profile` is explicitly set to `"full"` to prevent the v2026.3.2 bug that defaulted to `"messaging"`.
 - `plugins.security.autoLoadWorkspace` is `false` to block supply chain attacks from cloned repos.
+- `tools.exec.ask` is `"always"` — every shell command requires user approval.
+- `browser.enabled` is `false` — browser automation off by default (SSRF risk).
+- `session.maintenance.mode` is `"enforce"` with 30d prune to prevent unbounded disk growth.
+- `controlUi.dangerouslyDisableDeviceAuth` is explicitly `false`.
 - Channel credentials flow through `sanitize_for_json()` to prevent JSON injection.
 
 ## Commit Conventions
