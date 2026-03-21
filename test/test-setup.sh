@@ -291,9 +291,10 @@ cfg = json.load(open('${CONFIG_FILE}'))
 tools = cfg.get('tools', {})
 assert tools.get('profile') == 'full', 'tools.profile not full'
 assert tools.get('fs', {}).get('workspaceOnly') == True, 'fs.workspaceOnly not true'
+assert tools.get('exec', {}).get('ask') == 'always', 'exec.ask not always'
 assert tools.get('elevated', {}).get('enabled') == False, 'elevated.enabled not false'
 " 2>/dev/null; then
-  pass "tools security baseline configured (profile=full, workspaceOnly, no elevated)"
+  pass "tools security baseline configured (profile=full, workspaceOnly, exec.ask=always, no elevated)"
 else
   fail "tools security baseline not configured"
 fi
@@ -318,6 +319,40 @@ assert agents.get('defaults', {}).get('thinking') == 'adaptive', 'thinking not a
   pass "agents.defaults.thinking set to adaptive"
 else
   fail "agents.defaults.thinking not set to adaptive"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+assert cfg.get('browser', {}).get('enabled') == False, 'browser not disabled'
+" 2>/dev/null; then
+  pass "browser disabled by default"
+else
+  fail "browser not disabled by default"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+maint = cfg.get('session', {}).get('maintenance', {})
+assert maint.get('mode') == 'enforce', 'maintenance mode not enforce'
+assert maint.get('pruneAfter') == '30d', 'pruneAfter not 30d'
+assert maint.get('maxEntries') == 500, 'maxEntries not 500'
+" 2>/dev/null; then
+  pass "session.maintenance configured (enforce, 30d prune, 500 max entries)"
+else
+  fail "session.maintenance not configured"
+fi
+
+if python3 -c "
+import json
+cfg = json.load(open('${CONFIG_FILE}'))
+cui = cfg.get('gateway', {}).get('controlUi', {})
+assert cui.get('dangerouslyDisableDeviceAuth') == False, 'device auth not enforced'
+" 2>/dev/null; then
+  pass "gateway.controlUi.dangerouslyDisableDeviceAuth explicitly false"
+else
+  fail "gateway.controlUi.dangerouslyDisableDeviceAuth not set"
 fi
 
 if python3 -c "

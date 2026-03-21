@@ -808,7 +808,8 @@ CHEOF
       }
     },
     "controlUi": {
-      "allowInsecureAuth": false
+      "allowInsecureAuth": false,
+      "dangerouslyDisableDeviceAuth": false
     },
     "tailscale": {
       "mode": "serve"
@@ -830,12 +831,18 @@ CHEOF
   "tools": {
     "profile": "full",
     "fs": { "workspaceOnly": true },
+    "exec": {
+      "ask": "always"
+    },
     "elevated": { "enabled": false }
   },
   "plugins": {
     "security": {
       "autoLoadWorkspace": false
     }
+  },
+  "browser": {
+    "enabled": false
   },
 ${channels_block}
   "session": {
@@ -844,6 +851,11 @@ ${channels_block}
       "mode": "daily",
       "atHour": 4,
       "idleMinutes": 120
+    },
+    "maintenance": {
+      "mode": "enforce",
+      "pruneAfter": "30d",
+      "maxEntries": 500
     }
   },
   "logging": {
