@@ -39,6 +39,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * align to OpenClaw v2026.3.13 with full config audit ([8088725](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/80887254be29654e0f56fcde150f675cb1625f09))
 * close four hardening gaps found in audit ([#7](https://github.com/marcelbaklouti/openclaw-boilerplate/issues/7)) ([c499bbc](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/c499bbc961c92622f718e5c07f5d58057f7091ba))
 
+## [2026.3.13](https://github.com/marcelbaklouti/openclaw-boilerplate/compare/v2026.3.13...v2026.3.13) (2026-03-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* AI provider menu reordered (5 options), channel menu expanded (6 options), generated openclaw.json schema changed.
+* AI provider menu reordered (5 options), channel menu expanded (6 options), generated openclaw.json schema changed.
+* setup.sh no longer clones the OpenClaw repo or generates docker-compose.yml and .env. It now uses the official installer (openclaw.ai/install.sh) and openclaw onboard --install-daemon to run the gateway as a systemd service. Existing deployments using the docker-compose approach must migrate manually.
+
+### Added
+
+* adapt boilerplate to OpenClaw v2026.3.x with security hardening ([8c9d037](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/8c9d0373f9f77841a4257fb0b6189020189e6df9))
+* adapt boilerplate to OpenClaw v2026.3.x with security hardening ([7dfbcc4](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/7dfbcc40b1b046f8b5083f46260d7c77185fee42))
+* add multi-provider AI model selection and Docker smoke test ([863d8be](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/863d8bee8ddef51c2c114168974f343099536776))
+* switch to official installer, add Node.js prereq, hardened config, backup/restore ([7d7dd5a](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/7d7dd5aa12a4a29dc5d812df312cb13ecf58851f))
+
+
+### Fixed
+
+* add .trivyignore to suppress DS-0002 for test Dockerfile ([1acf826](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/1acf82623d9be7689f21ecff265ce87c99ea4ecc))
+* add version.txt for release-please simple strategy ([f93bbff](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/f93bbfff521c345038da02dfdebd1241faec4b10))
+* correct firewalld command, remove broken npm step, fix tg prefix, gate releases on all CI ([6c4ce42](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/6c4ce42b10ec470fe2d49db13f10b7be73ab997b))
+* pin release-as to current OpenClaw version 2026.3.13 ([#19](https://github.com/marcelbaklouti/openclaw-boilerplate/issues/19)) ([da9e27b](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/da9e27b47000527bd6d3381f0855dfae312bd9db))
+* resolve CI failures from ShellCheck and Trivy ([b003741](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/b003741d74d7dd57d1085d4308274c9374470db2))
+* resolve SC2024 shellcheck warnings in update script ([26a9f95](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/26a9f959b50cafd9f02c9bbd147e4086e0227159))
+* resolve SC2024 shellcheck warnings in update script ([6299453](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/6299453c220559ac5aa8cb9f10d842fc11663539))
+
+
+### Security
+
+* align to OpenClaw v2026.3.13 with full config audit ([7320b38](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/7320b38169f8853f51ffd097bb19c8394255beb6))
+* align to OpenClaw v2026.3.13 with full config audit ([8088725](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/80887254be29654e0f56fcde150f675cb1625f09))
+* close four hardening gaps found in audit ([#7](https://github.com/marcelbaklouti/openclaw-boilerplate/issues/7)) ([c499bbc](https://github.com/marcelbaklouti/openclaw-boilerplate/commit/c499bbc961c92622f718e5c07f5d58057f7091ba))
+
 ## [2026.3.13](https://github.com/marcelbaklouti/openclaw-boilerplate/releases/tag/v2026.3.13)
 
 ### Added
